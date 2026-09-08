@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Editores
+.idea/
+.vscode/
+*.iml
+
+# Archivos sensibles
+**/.env
+
+# Laravel
+backend/vendor/
+backend/node_modules/
+backend/public/build/
+backend/storage/logs/*.log
+
+# Aplicación móvil
+mobile/.gradle/
+mobile/build/
+mobile/local.properties
+
+# Registros
+*.log
