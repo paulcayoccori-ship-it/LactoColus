@@ -15,12 +15,13 @@ class SessionController extends Controller
 {
     public function store(LoginRequest $request): RedirectResponse
     {
-        if (! Auth::guard('web')->attempt($request->safe()->only(['email', 'password']))) {
+        if (! Auth::guard('web')->attempt($request->safe()->only(['email', 'password']) + ['active' => true])) {
             throw ValidationException::withMessages(['email' => 'Las credenciales no son válidas.']);
         }
         $request->session()->regenerate();
+        $request->session()->put('auth_version', Auth::guard('web')->user()->auth_version);
 
-        return redirect()->route('admin.productores');
+        return redirect()->route('admin.dashboard');
     }
 
     public function destroy(Request $request): RedirectResponse

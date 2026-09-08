@@ -22,7 +22,7 @@ class ProductorServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        Gate::define('administrar-productores', fn (User $user): bool => $user->hasRole('administrador', 'web'));
+        Gate::define('administrar-productores', fn (User $user): bool => $user->isActiveAdministrator());
         RateLimiter::for('login', fn (Request $request) => Limit::perMinute(5)->by(mb_strtolower((string) $request->input('email')).'|'.$request->ip()));
     }
 }

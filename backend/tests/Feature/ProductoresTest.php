@@ -106,9 +106,9 @@ class ProductoresTest extends TestCase
         $this->get('/login')->assertOk()->assertSee('Iniciar sesión');
         $this->get('/admin/productores')->assertRedirect('/login');
         $this->post('/login', ['email' => $user->email, 'password' => 'wrong'])->assertSessionHasErrors('email');
-        $this->post('/login', ['email' => $user->email, 'password' => 'password'])->assertRedirect('/admin/productores');
+        $this->post('/login', ['email' => $user->email, 'password' => 'password'])->assertRedirect('/admin/dashboard');
         $this->assertAuthenticatedAs($user);
-        $this->get('/login')->assertRedirect('/admin/productores');
+        $this->get('/login')->assertRedirect('/admin/dashboard');
         $this->get('/admin/productores')->assertOk()->assertSee('Productores');
         $this->post('/logout')->assertRedirect('/login');
         $this->assertGuest();
@@ -167,6 +167,6 @@ class ProductoresTest extends TestCase
         $this->assertDatabaseCount('productores', 20);
         $this->assertDatabaseCount('users', 1);
         $this->assertDatabaseMissing('roles', ['guard_name' => 'sanctum']);
-        $this->post('/login', ['email' => 'admin@lactocolus.test', 'password' => 'password'])->assertRedirect('/admin/productores');
+        $this->post('/login', ['email' => 'admin@lactocolus.test', 'password' => 'password'])->assertRedirect('/admin/dashboard');
     }
 }

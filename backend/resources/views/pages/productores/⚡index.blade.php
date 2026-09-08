@@ -20,6 +20,7 @@ new class extends Component {
     public array $form = ['codigo'=>'','dni'=>'','nombres'=>'','apellidos'=>'','celular'=>null,'email'=>null,'direccion'=>null,'comunidad'=>null,'estado'=>true];
 
     public function boot(): void { Gate::authorize('administrar-productores'); }
+    public function paginationView(): string { return 'pagination'; }
     public function updatedSearch(): void { $this->resetPage(); }
     public function create(): void {
         Gate::authorize('administrar-productores');
