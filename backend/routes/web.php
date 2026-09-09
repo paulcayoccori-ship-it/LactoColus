@@ -16,3 +16,4 @@ Route::livewire('/admin/productores', 'pages::productores.index')->middleware(['
 
 Route::livewire('/admin/rutas', 'pages::rutas.index')->middleware(['auth', 'can:administrar-rutas'])->name('admin.rutas');
 Route::livewire('/admin/acopios', 'pages::acopios.index')->middleware(['auth', 'can:administrar-acopios'])->name('admin.acopios');
+Route::livewire('/admin/recepciones', 'pages::recepciones.index')->middleware(['auth', 'can:administrar-recepciones'])->name('admin.recepciones');

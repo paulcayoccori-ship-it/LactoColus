@@ -51,6 +51,7 @@
                 @can('administrar-productores')<x-menu-item title="Productores" icon="o-user-group" :link="route('admin.productores')" />@endcan
                 @can('administrar-rutas')<x-menu-item title="Rutas de acopio" icon="o-map" :link="route('admin.rutas')" />@endcan
                 @can('administrar-acopios')<x-menu-item title="Acopios" icon="o-beaker" :link="route('admin.acopios')" />@endcan
+                @can('administrar-recepciones')<x-menu-item title="Recepción en planta" icon="o-building-office-2" :link="route('admin.recepciones')" />@endcan
                 @can('administrar-usuarios')<x-menu-item title="Usuarios" icon="o-users" :link="route('admin.usuarios')" />@endcan
                 
 

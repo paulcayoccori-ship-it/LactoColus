@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AcopioController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ProductorController;
+use App\Http\Controllers\Api\V1\RecepcionController;
 use App\Http\Middleware\EnsureActiveUser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -22,5 +23,6 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::get('/jornadas/{uuid}', [AcopioController::class, 'showJourney'])->whereUuid('uuid')->name('jornadas.show');
             Route::post('/sincronizar', [AcopioController::class, 'sync'])->name('sync');
         });
+        Route::post('/recepciones/lecturas', [RecepcionController::class, 'store'])->name('recepciones.lecturas.store');
     });
 });
