@@ -13,3 +13,5 @@ Route::post('/logout', [SessionController::class, 'destroy'])->middleware('auth'
 Route::livewire('/admin/dashboard', 'pages::dashboard')->middleware(['auth', 'can:ver-dashboard'])->name('admin.dashboard');
 Route::livewire('/admin/usuarios', 'pages::usuarios.index')->middleware(['auth', 'can:administrar-usuarios'])->name('admin.usuarios');
 Route::livewire('/admin/productores', 'pages::productores.index')->middleware(['auth', 'can:administrar-productores'])->name('admin.productores');
+
+Route::livewire('/admin/rutas', 'pages::rutas.index')->middleware(['auth', 'can:administrar-rutas'])->name('admin.rutas');

@@ -3,9 +3,11 @@
 namespace App\Providers;
 
 use App\Domain\Dashboard\DashboardRepository;
+use App\Domain\Rutas\RutaRepository;
 use App\Domain\Usuarios\UsuarioRepository;
 use App\Http\Middleware\EnsureActiveUser;
 use App\Infrastructure\Dashboard\EloquentDashboardRepository;
+use App\Infrastructure\Rutas\EloquentRutaRepository;
 use App\Infrastructure\Usuarios\EloquentUsuarioRepository;
 use App\Models\User;
 use Illuminate\Support\Facades\Gate;
@@ -19,6 +21,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(RutaRepository::class, EloquentRutaRepository::class);
         $this->app->bind(UsuarioRepository::class, EloquentUsuarioRepository::class);
         $this->app->bind(DashboardRepository::class, EloquentDashboardRepository::class);
     }
@@ -29,6 +32,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::define('administrar-usuarios', fn (User $user): bool => $user->isActiveAdministrator());
+        Gate::define('administrar-rutas', fn (User $user): bool => $user->isActiveAdministrator());
         Gate::define('ver-dashboard', fn (User $user): bool => $user->isActiveAdministrator());
         Livewire::addPersistentMiddleware([EnsureActiveUser::class]);
     }

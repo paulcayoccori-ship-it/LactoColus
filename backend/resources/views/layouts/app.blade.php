@@ -49,6 +49,7 @@
 
                 @can('ver-dashboard')<x-menu-item title="Dashboard" icon="o-home" :link="route('admin.dashboard')" />@endcan
                 @can('administrar-productores')<x-menu-item title="Productores" icon="o-user-group" :link="route('admin.productores')" />@endcan
+                @can('administrar-rutas')<x-menu-item title="Rutas de acopio" icon="o-map" :link="route('admin.rutas')" />@endcan
                 @can('administrar-usuarios')<x-menu-item title="Usuarios" icon="o-users" :link="route('admin.usuarios')" />@endcan
                 
 
