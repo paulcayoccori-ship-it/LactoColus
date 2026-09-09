@@ -22,3 +22,5 @@ mobile/local.properties
 
 # Registros
 *.log
+
+graphify-out/
