@@ -15,3 +15,4 @@ Route::livewire('/admin/usuarios', 'pages::usuarios.index')->middleware(['auth',
 Route::livewire('/admin/productores', 'pages::productores.index')->middleware(['auth', 'can:administrar-productores'])->name('admin.productores');
 
 Route::livewire('/admin/rutas', 'pages::rutas.index')->middleware(['auth', 'can:administrar-rutas'])->name('admin.rutas');
+Route::livewire('/admin/acopios', 'pages::acopios.index')->middleware(['auth', 'can:administrar-acopios'])->name('admin.acopios');
