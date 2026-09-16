@@ -39,4 +39,16 @@ class JornadaAcopio extends Model
     {
         return $this->hasMany(EntregaAcopio::class, 'jornada_id');
     }
+
+    /** Entregas reales (con litros). Excluye los marcadores de "no entregó" que deja el cierre. */
+    public function entregasRealizadas(): HasMany
+    {
+        return $this->entregas()->where('no_entrego', false);
+    }
+
+    /** Productores marcados "no entregó" al cerrar la jornada. */
+    public function noEntregas(): HasMany
+    {
+        return $this->entregas()->where('no_entrego', true);
+    }
 }

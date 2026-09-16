@@ -54,7 +54,7 @@ class PanelAdministrativoTest extends TestCase
         foreach (['ver-dashboard', 'administrar-usuarios', 'administrar-productores'] as $ability) {
             $this->assertFalse(Gate::forUser($user)->allows($ability));
         }
-        $this->post('/login', ['email' => $user->email, 'password' => 'password'])->assertRedirect('/admin/dashboard');
+        $this->post('/login', ['email' => $user->email, 'password' => 'password'])->assertRedirect($role === 'contador' ? '/admin/liquidaciones' : '/admin/dashboard');
         $this->get('/admin/dashboard')->assertForbidden()->assertSee('Acceso denegado')->assertSee('Cerrar sesión');
         $this->get('/admin/usuarios')->assertForbidden();
         Livewire::actingAs($user)->test('pages::usuarios.index')->assertForbidden();
@@ -268,7 +268,7 @@ class PanelAdministrativoTest extends TestCase
         $this->actingAs($target)->withSession(['auth_version' => 0])->get('/admin/dashboard')->assertRedirect('/login');
         $this->app['auth']->forgetGuards();
         $this->withToken($oldToken)->getJson('/api/v1/productores')->assertUnauthorized();
-        $this->post('/login', ['email' => $target->email, 'password' => 'password'])->assertRedirect('/admin/dashboard')->assertSessionHas('auth_version', 1);
+        $this->post('/login', ['email' => $target->email, 'password' => 'password'])->assertRedirect('/admin/liquidaciones')->assertSessionHas('auth_version', 1);
         $this->post('/logout');
         $this->postJson('/api/v1/login', ['email' => $target->email, 'password' => 'password'])->assertOk()->assertJsonStructure(['data' => ['token', 'token_type']]);
     }

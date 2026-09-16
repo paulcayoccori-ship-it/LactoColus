@@ -17,7 +17,7 @@ new class extends Component {
 
 <div class="space-y-6">
     <x-header title="Dashboard" subtitle="Resumen del padrón de LactoColus" separator />
-    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-10 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <x-stat title="Total de productores" :value="$total" icon="o-user-group" />
         <x-stat title="Productores activos" :value="$activos" icon="o-check-circle" />
         <x-stat title="Productores inactivos" :value="$inactivos" icon="o-pause-circle" />
@@ -27,6 +27,19 @@ new class extends Component {
         <x-stat title="Recepciones hoy" :value="$recepciones_hoy" icon="o-building-office-2" />
         <x-stat title="Litros recibidos hoy" :value="$litros_recibidos_hoy" icon="o-scale" />
         <x-stat title="Alertas pendientes" :value="$alertas_pendientes" icon="o-exclamation-triangle" />
+        <x-stat title="Análisis hoy" :value="$analisis_hoy" icon="o-beaker" />
+        <x-stat title="Análisis observados" :value="$analisis_observados" icon="o-exclamation-triangle" />
+        <x-stat title="Pendientes de revisión" :value="$analisis_pendientes" icon="o-clock" />
+        <x-stat title="Litros procesados" :value="$litros_procesados" icon="o-beaker" />
+        <x-stat title="Moldes producidos" :value="$moldes_producidos" icon="o-cube" />
+        <x-stat title="Moldes por 100 L" :value="$rendimiento_promedio" icon="o-chart-bar" />
+        <x-stat title="Alertas de rendimiento" :value="$alertas_rendimiento" icon="o-exclamation-triangle" />
+        @foreach($stock_queso as $tipo=>$cantidad)<x-stat :title="'Stock '.str_replace('_',' ',$tipo)" :value="$cantidad" icon="o-cube" wire:key="dashboard-stock-{{ $tipo }}" />@endforeach
+        <x-stat title="Ventas hoy" :value="$ventas_hoy" icon="o-shopping-cart" />
+        <x-stat title="Ventas hoy (S/)" :value="$importe_ventas_hoy" icon="o-banknotes" />
+        <x-stat title="Liquidaciones pendientes" :value="$liquidaciones_pendientes" icon="o-banknotes" />
+        <x-stat title="Pagos hoy" :value="$pagos_hoy" icon="o-check-circle" />
+        <x-stat title="Pagado hoy (S/)" :value="$importe_pagado_hoy" icon="o-banknotes" />
         <x-stat title="Total de usuarios" :value="$usuarios" icon="o-users" />
     </div>
     <div class="flex flex-wrap gap-3">

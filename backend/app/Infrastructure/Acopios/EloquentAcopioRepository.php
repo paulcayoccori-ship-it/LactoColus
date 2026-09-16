@@ -13,7 +13,7 @@ final class EloquentAcopioRepository implements AcopioRepository
 {
     public function adminPaginate(array $filters): LengthAwarePaginator
     {
-        return JornadaAcopio::query()->with(['ruta', 'recolector'])->withCount('entregas')->withSum('entregas', 'litros')
+        return JornadaAcopio::query()->with(['ruta', 'recolector'])->withCount('entregasRealizadas')->withSum('entregasRealizadas', 'litros')
             ->when($filters['fecha_desde'] ?? null, fn (Builder $q, string $date) => $q->whereDate('fecha_operativa', '>=', $date))
             ->when($filters['fecha_hasta'] ?? null, fn (Builder $q, string $date) => $q->whereDate('fecha_operativa', '<=', $date))
             ->when($filters['ruta_id'] ?? null, fn (Builder $q, int $id) => $q->where('ruta_id', $id))
@@ -25,7 +25,8 @@ final class EloquentAcopioRepository implements AcopioRepository
 
     public function adminFind(int $id): array
     {
-        $jornada = JornadaAcopio::query()->with(['ruta', 'recolector', 'entregas.productor', 'entregas.recolector'])->findOrFail($id);
+        $jornada = JornadaAcopio::query()->with(['ruta', 'recolector', 'entregasRealizadas.productor', 'entregasRealizadas.recolector'])
+            ->withCount('entregasRealizadas')->withSum('entregasRealizadas', 'litros')->findOrFail($id);
 
         return $this->detail($jornada);
     }
@@ -35,9 +36,20 @@ final class EloquentAcopioRepository implements AcopioRepository
         return RutaAcopio::query()->where('recolector_id', $userId)->where('estado', true)->with('productores')->get()->map(fn (RutaAcopio $route): array => ['id' => $route->id, 'codigo' => $route->codigo, 'nombre' => $route->nombre, 'productores' => $route->productores->map(fn ($producer): array => ['id' => $producer->id, 'codigo' => $producer->codigo, 'nombres' => $producer->nombres, 'apellidos' => $producer->apellidos, 'orden' => $producer->pivot->orden])->values()->all()])->all();
     }
 
+    public function journeysForCollector(int $userId, array $filters, int $perPage): LengthAwarePaginator
+    {
+        return JornadaAcopio::query()->with(['ruta', 'recolector'])->withCount('entregasRealizadas')->withSum('entregasRealizadas', 'litros')
+            ->where('recolector_id', $userId)
+            ->when($filters['estado'] ?? null, fn (Builder $q, string $state) => $q->where('estado', $state))
+            ->when($filters['ruta_id'] ?? null, fn (Builder $q, int $id) => $q->where('ruta_id', $id))
+            ->when($filters['desde'] ?? null, fn (Builder $q, string $date) => $q->whereDate('fecha_operativa', '>=', $date))
+            ->when($filters['hasta'] ?? null, fn (Builder $q, string $date) => $q->whereDate('fecha_operativa', '<=', $date))
+            ->latest('fecha_operativa')->latest('id')->paginate($perPage)->through(fn (JornadaAcopio $jornada): array => $this->summary($jornada));
+    }
+
     public function findJourneyByPublicId(string $uuid, ?int $userId = null): ?array
     {
-        $query = JornadaAcopio::query()->with(['ruta', 'recolector', 'entregas.productor'])->where('uuid_publico', $uuid);
+        $query = JornadaAcopio::query()->with(['ruta', 'recolector', 'entregasRealizadas.productor'])->where('uuid_publico', $uuid);
         if ($userId !== null) {
             $query->where('recolector_id', $userId);
         }
@@ -50,7 +62,7 @@ final class EloquentAcopioRepository implements AcopioRepository
     {
         $jornada = JornadaAcopio::create($data + ['ruta_id' => $routeId]);
 
-        return $this->detail($jornada->load(['ruta', 'recolector', 'entregas.productor']));
+        return $this->detail($jornada->load(['ruta', 'recolector', 'entregasRealizadas.productor']));
     }
 
     public function updateJourney(int $id, array $data): array
@@ -58,7 +70,7 @@ final class EloquentAcopioRepository implements AcopioRepository
         $jornada = JornadaAcopio::query()->lockForUpdate()->findOrFail($id);
         $jornada->fill($data)->save();
 
-        return $this->detail($jornada->fresh()->load(['ruta', 'recolector', 'entregas.productor']));
+        return $this->detail($jornada->fresh()->load(['ruta', 'recolector', 'entregasRealizadas.productor']));
     }
 
     public function addDelivery(int $userId, array $data): array
@@ -96,14 +108,23 @@ final class EloquentAcopioRepository implements AcopioRepository
         return ['old' => $old, 'new' => $this->delivery($delivery->fresh()->load(['productor', 'jornada']))];
     }
 
+    public function missingDeliveries(int $routeId, int $jornadaId): array
+    {
+        $ruta = RutaAcopio::findOrFail($routeId);
+        $asignados = $ruta->productores()->where('estado', true)->pluck('productores.id');
+        $conEntrega = EntregaAcopio::where('jornada_id', $jornadaId)->where('no_entrego', false)->pluck('productor_id');
+
+        return $asignados->diff($conEntrega)->values()->all();
+    }
+
     private function summary(JornadaAcopio $jornada): array
     {
-        return ['id' => $jornada->id, 'uuid_publico' => $jornada->uuid_publico, 'ruta' => $jornada->ruta?->codigo.' — '.$jornada->ruta?->nombre, 'recolector' => $jornada->recolector?->name ?? 'Sin responsable', 'fecha_operativa' => $jornada->fecha_operativa?->toDateString(), 'turno' => $jornada->turno, 'estado' => $jornada->estado, 'productores_atendidos' => $jornada->entregas_count, 'litros' => (string) ($jornada->entregas_sum_litros ?? '0.000')];
+        return ['id' => $jornada->id, 'uuid_publico' => $jornada->uuid_publico, 'ruta_id' => $jornada->ruta_id, 'ruta_codigo' => $jornada->ruta?->codigo, 'ruta' => $jornada->ruta?->codigo.' — '.$jornada->ruta?->nombre, 'recolector' => $jornada->recolector?->name ?? 'Sin responsable', 'fecha_operativa' => $jornada->fecha_operativa?->toDateString(), 'turno' => $jornada->turno, 'estado' => $jornada->estado, 'productores_atendidos' => $jornada->entregas_realizadas_count, 'litros' => (string) ($jornada->entregas_realizadas_sum_litros ?? '0.000')];
     }
 
     private function detail(JornadaAcopio $jornada): array
     {
-        return $this->summary($jornada) + ['observaciones' => $jornada->observaciones, 'iniciada_at' => $jornada->iniciada_at?->toIso8601String(), 'cerrada_at' => $jornada->cerrada_at?->toIso8601String(), 'ruta_id' => $jornada->ruta_id, 'recolector_id' => $jornada->recolector_id, 'entregas' => $jornada->entregas->map(fn (EntregaAcopio $e): array => $this->delivery($e))->all()];
+        return $this->summary($jornada) + ['observaciones' => $jornada->observaciones, 'iniciada_at' => $jornada->iniciada_at?->toIso8601String(), 'cerrada_at' => $jornada->cerrada_at?->toIso8601String(), 'recolector_id' => $jornada->recolector_id, 'entregas' => $jornada->entregasRealizadas->map(fn (EntregaAcopio $e): array => $this->delivery($e))->all()];
     }
 
     private function delivery(EntregaAcopio $delivery): array

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
+use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,12 +20,12 @@ class AuthController extends Controller
     public function login(LoginRequest $request): JsonResponse
     {
         return DB::transaction(function () use ($request): JsonResponse {
-            $user = User::query()->where('email', $request->input('email'))->lockForUpdate()->first();
+            $user = User::query()->where('email', $request->input('email'))->with('roles')->lockForUpdate()->first();
             if (! $user || ! $user->active || ! Hash::check($request->input('password'), $user->password)) {
                 return response()->json(['message' => 'Las credenciales no son válidas.', 'data' => null], 401);
             }
 
-            return response()->json(['message' => 'Sesión iniciada.', 'data' => ['token' => $user->createToken($request->input('device_name', 'api'))->plainTextToken, 'token_type' => 'Bearer', 'user' => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email]]]);
+            return response()->json(['message' => 'Sesión iniciada.', 'data' => ['token' => $user->createToken($request->input('device_name', 'api'))->plainTextToken, 'token_type' => 'Bearer', 'user' => new UserResource($user)]]);
         });
     }
 

@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class RecepcionPlantaFactory extends Factory
 {
+    protected $model = RecepcionPlanta::class;
+
     /**
      * Define the model's default state.
      *

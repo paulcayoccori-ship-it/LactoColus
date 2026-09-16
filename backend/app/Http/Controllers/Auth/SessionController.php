@@ -21,7 +21,11 @@ class SessionController extends Controller
         $request->session()->regenerate();
         $request->session()->put('auth_version', Auth::guard('web')->user()->auth_version);
 
-        return redirect()->route('admin.dashboard');
+        if (! Auth::user()->isActiveAdministrator() && ! Auth::user()->can('operar-calidad') && Auth::user()->can('operar-liquidaciones')) {
+            return redirect()->route('admin.liquidaciones');
+        }
+
+        return redirect()->route(! Auth::user()->isActiveAdministrator() && Auth::user()->can('operar-calidad') ? 'admin.calidad' : 'admin.dashboard');
     }
 
     public function destroy(Request $request): RedirectResponse

@@ -1,0 +1,2 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>Muro de Honor · {{ config('app.name') }}</title>@vite(['resources/css/app.css','resources/js/app.js'])</head><body class="bg-base-200 min-h-screen"><header class="bg-base-100 p-5"><div class="max-w-6xl mx-auto"><x-app-brand /></div></header><main class="max-w-6xl mx-auto p-5 md:p-8">{{ $slot }}</main></body></html>

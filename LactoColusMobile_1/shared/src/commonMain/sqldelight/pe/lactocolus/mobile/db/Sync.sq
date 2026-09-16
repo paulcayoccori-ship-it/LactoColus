@@ -1,0 +1,51 @@
+-- Cola de sincronización diferida. Se procesa en orden de creación.
+CREATE TABLE cola_sync (
+    id_local        TEXT NOT NULL PRIMARY KEY,
+    tipo_entidad    TEXT NOT NULL,          -- ENTREGA | ANALISIS | JORNADA | TRASLADO | LECTURA_COMUNICADO
+    entidad_id      TEXT NOT NULL,          -- id_local de la entidad
+    clave_idempotencia TEXT NOT NULL,
+    payload         TEXT NOT NULL,          -- JSON del cuerpo a enviar
+    intentos        INTEGER NOT NULL DEFAULT 0,
+    ultimo_error    TEXT,
+    estado          TEXT NOT NULL DEFAULT 'PENDIENTE',  -- PENDIENTE | ENVIANDO | CREADO | REPETIDO | RECHAZADO
+    creado_en       INTEGER NOT NULL,
+    actualizado_en  INTEGER NOT NULL
+);
+
+CREATE INDEX idx_cola_sync_estado ON cola_sync(estado);
+CREATE INDEX idx_cola_sync_orden ON cola_sync(creado_en);
+
+pendientes:
+SELECT * FROM cola_sync WHERE estado IN ('PENDIENTE', 'RECHAZADO') ORDER BY creado_en;
+
+todos:
+SELECT * FROM cola_sync ORDER BY creado_en DESC;
+
+porEntidad:
+SELECT * FROM cola_sync WHERE entidad_id = ? LIMIT 1;
+
+porId:
+SELECT * FROM cola_sync WHERE id_local = ?;
+
+contarPendientes:
+SELECT COUNT(*) FROM cola_sync WHERE estado IN ('PENDIENTE', 'RECHAZADO');
+
+encolar:
+INSERT INTO cola_sync(id_local, tipo_entidad, entidad_id, clave_idempotencia, payload, intentos, ultimo_error, estado, creado_en, actualizado_en)
+VALUES (?, ?, ?, ?, ?, 0, NULL, 'PENDIENTE', ?, ?);
+
+marcarEnviando:
+UPDATE cola_sync SET estado = 'ENVIANDO', actualizado_en = :en WHERE id_local = :id;
+
+marcarResultado:
+UPDATE cola_sync SET estado = :estado, ultimo_error = :error, intentos = intentos + 1, actualizado_en = :en
+WHERE id_local = :id;
+
+reintentar:
+UPDATE cola_sync SET estado = 'PENDIENTE', actualizado_en = :en WHERE id_local = :id;
+
+reintentarTodos:
+UPDATE cola_sync SET estado = 'PENDIENTE', actualizado_en = :en WHERE estado = 'RECHAZADO';
+
+borrarCola:
+DELETE FROM cola_sync;

@@ -1,0 +1,21 @@
+-- Sesión del usuario autenticado. Una sola fila vigente por dispositivo.
+CREATE TABLE usuario (
+    id_local        TEXT NOT NULL PRIMARY KEY,
+    id_remoto       INTEGER,
+    nombre          TEXT NOT NULL,
+    correo          TEXT NOT NULL,
+    rol             TEXT NOT NULL,          -- RECOLECTOR | CALIDAD | PRODUCTOR | SIN_ACCESO
+    token           TEXT NOT NULL,
+    vigente_hasta   INTEGER NOT NULL,       -- epoch millis
+    creado_en       INTEGER NOT NULL
+);
+
+sesionActual:
+SELECT * FROM usuario ORDER BY creado_en DESC LIMIT 1;
+
+guardarSesion:
+INSERT OR REPLACE INTO usuario(id_local, id_remoto, nombre, correo, rol, token, vigente_hasta, creado_en)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+borrarSesion:
+DELETE FROM usuario;

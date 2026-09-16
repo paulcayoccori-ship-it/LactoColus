@@ -52,6 +52,17 @@
                 @can('administrar-rutas')<x-menu-item title="Rutas de acopio" icon="o-map" :link="route('admin.rutas')" />@endcan
                 @can('administrar-acopios')<x-menu-item title="Acopios" icon="o-beaker" :link="route('admin.acopios')" />@endcan
                 @can('administrar-recepciones')<x-menu-item title="Recepción en planta" icon="o-building-office-2" :link="route('admin.recepciones')" />@endcan
+                @can('operar-liquidaciones')<x-menu-item title="Reportes" icon="o-chart-bar" :link="route('admin.reportes')" />@endcan
+                @can('operar-liquidaciones')<x-menu-item title="Liquidaciones semanales" icon="o-banknotes" :link="route('admin.liquidaciones')" />@endcan
+                @can('administrar-penalizaciones')<x-menu-item title="Penalizaciones y asistencia" icon="o-shield-exclamation" :link="route('admin.penalizaciones')" />@endcan
+                @can('administrar-ranking')<x-menu-item title="Ranking de calidad" icon="o-trophy" :link="route('admin.ranking')" />@endcan
+                @can('administrar-traslados')<x-menu-item title="Solicitudes de traslado" icon="o-arrows-right-left" :link="route('admin.traslados')" />@endcan
+                @can('administrar-comunicados')<x-menu-item title="Comunicados" icon="o-megaphone" :link="route('admin.comunicados')" />@endcan
+                @can('administrar-ventas')
+                    <x-menu-item title="Inventario y ventas" icon="o-shopping-cart" :link="route('admin.ventas')" />
+                @endcan
+                @can('administrar-produccion')<x-menu-item title="Producción de queso" icon="o-cube" :link="route('admin.produccion')" />@endcan
+                @can('operar-calidad')<x-menu-item title="Control de calidad" icon="o-beaker" :link="route('admin.calidad')" />@endcan
                 @can('administrar-usuarios')<x-menu-item title="Usuarios" icon="o-users" :link="route('admin.usuarios')" />@endcan
                 
 

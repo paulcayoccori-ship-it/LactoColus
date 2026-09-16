@@ -1,0 +1,132 @@
+-- Comunicados dirigidos al productor autenticado.
+CREATE TABLE comunicado (
+    id_local    TEXT NOT NULL PRIMARY KEY,
+    id_remoto   INTEGER,
+    uuid        TEXT,
+    tipo        TEXT NOT NULL DEFAULT 'general',   -- general | urgente | capacitacion
+    titulo      TEXT NOT NULL,
+    cuerpo      TEXT NOT NULL,
+    fecha       INTEGER NOT NULL,
+    leido       INTEGER NOT NULL DEFAULT 0,
+    leido_en    INTEGER,
+    estado_sync TEXT NOT NULL DEFAULT 'CREADO'
+);
+
+-- Liquidación semanal del productor autenticado.
+CREATE TABLE liquidacion (
+    id_local        TEXT NOT NULL PRIMARY KEY,
+    id_remoto       INTEGER,
+    semana          TEXT NOT NULL,          -- ISO week, p.ej. 2026-W37
+    desde           TEXT NOT NULL,
+    hasta           TEXT NOT NULL,
+    litros          REAL NOT NULL,
+    precio_litro    REAL NOT NULL,
+    bonos           REAL NOT NULL DEFAULT 0.0,
+    penalizaciones  REAL NOT NULL DEFAULT 0.0,
+    descuentos      REAL NOT NULL DEFAULT 0.0,
+    total           REAL NOT NULL,
+    estado_pago     TEXT NOT NULL DEFAULT 'pendiente'   -- pendiente | pagada
+);
+
+-- Muro de Honor: posición de un productor en un periodo. Solo datos públicos.
+CREATE TABLE ranking (
+    id_local    TEXT NOT NULL PRIMARY KEY,
+    periodo     TEXT NOT NULL,              -- diario | semanal | mensual
+    fecha       TEXT NOT NULL,
+    posicion    INTEGER NOT NULL,
+    productor   TEXT NOT NULL,              -- etiqueta pública (nombre o código)
+    ruta        TEXT NOT NULL,
+    puntuacion  REAL NOT NULL
+);
+
+-- Solicitud de traslado de ruta hecha por el productor.
+CREATE TABLE solicitud_traslado (
+    id_local        TEXT NOT NULL PRIMARY KEY,
+    id_remoto       INTEGER,
+    uuid            TEXT,
+    ruta_origen     TEXT NOT NULL,
+    ruta_destino    TEXT NOT NULL,
+    fecha_deseada   TEXT NOT NULL,
+    motivo          TEXT NOT NULL,
+    estado          TEXT NOT NULL DEFAULT 'pendiente',  -- pendiente | aprobada | rechazada | aplicada | cancelada
+    anticipacion_dias INTEGER NOT NULL,
+    creada_en       INTEGER NOT NULL,
+    estado_sync     TEXT NOT NULL DEFAULT 'PENDIENTE',
+    sync_mensaje    TEXT,
+    clave_idempotencia TEXT NOT NULL
+);
+
+CREATE INDEX idx_ranking_periodo_fecha ON ranking(periodo, fecha, posicion);
+CREATE INDEX idx_comunicado_fecha ON comunicado(fecha);
+
+-- ---------- comunicado ----------
+comunicados:
+SELECT * FROM comunicado ORDER BY fecha DESC;
+
+comunicadoPorId:
+SELECT * FROM comunicado WHERE id_local = ?;
+
+contarNoLeidos:
+SELECT COUNT(*) FROM comunicado WHERE leido = 0;
+
+insertComunicado:
+INSERT OR REPLACE INTO comunicado(id_local, id_remoto, uuid, tipo, titulo, cuerpo, fecha, leido, leido_en, estado_sync)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+marcarLeido:
+UPDATE comunicado SET leido = 1, leido_en = :en WHERE id_local = :id;
+
+-- ---------- liquidacion ----------
+liquidaciones:
+SELECT * FROM liquidacion ORDER BY hasta DESC;
+
+liquidacionPorId:
+SELECT * FROM liquidacion WHERE id_local = ?;
+
+insertLiquidacion:
+INSERT OR REPLACE INTO liquidacion(id_local, id_remoto, semana, desde, hasta, litros, precio_litro, bonos, penalizaciones, descuentos, total, estado_pago)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- ---------- ranking ----------
+rankingPorPeriodo:
+SELECT * FROM ranking WHERE periodo = :periodo AND fecha = :fecha ORDER BY posicion;
+
+rankingPorPeriodoYRuta:
+SELECT * FROM ranking WHERE periodo = :periodo AND fecha = :fecha AND ruta = :ruta ORDER BY posicion;
+
+rutasEnRanking:
+SELECT DISTINCT ruta FROM ranking ORDER BY ruta;
+
+borrarRankingDePeriodo:
+DELETE FROM ranking WHERE periodo = :periodo AND fecha = :fecha;
+
+insertRanking:
+INSERT OR REPLACE INTO ranking(id_local, periodo, fecha, posicion, productor, ruta, puntuacion)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+-- ---------- solicitud_traslado ----------
+solicitudesTraslado:
+SELECT * FROM solicitud_traslado ORDER BY creada_en DESC;
+
+solicitudTrasladoPorId:
+SELECT * FROM solicitud_traslado WHERE id_local = ?;
+
+insertSolicitudTraslado:
+INSERT INTO solicitud_traslado(id_local, id_remoto, uuid, ruta_origen, ruta_destino, fecha_deseada, motivo, estado, anticipacion_dias, creada_en, estado_sync, sync_mensaje, clave_idempotencia)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+marcarTrasladoSync:
+UPDATE solicitud_traslado SET estado_sync = :estado, sync_mensaje = :mensaje, id_remoto = :idRemoto WHERE id_local = :id;
+
+-- ---------- borrado local ----------
+borrarComunicados:
+DELETE FROM comunicado;
+
+borrarLiquidaciones:
+DELETE FROM liquidacion;
+
+borrarRanking:
+DELETE FROM ranking;
+
+borrarTraslados:
+DELETE FROM solicitud_traslado;

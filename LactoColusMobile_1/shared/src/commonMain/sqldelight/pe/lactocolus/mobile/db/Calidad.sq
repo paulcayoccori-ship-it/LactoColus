@@ -1,0 +1,76 @@
+-- Análisis de calidad de leche (muestra Lactoscan) por productor.
+CREATE TABLE analisis (
+    id_local        TEXT NOT NULL PRIMARY KEY,
+    id_remoto       INTEGER,
+    uuid_publico    TEXT,
+    productor_id    TEXT NOT NULL,
+    fecha           INTEGER NOT NULL,       -- epoch millis de la muestra
+    equipo          TEXT,
+    fuente          TEXT NOT NULL DEFAULT 'manual',   -- manual | dispositivo
+    resultado       TEXT NOT NULL DEFAULT 'pendiente_revision', -- pendiente_revision | conforme | observado
+    agua_anadida    REAL NOT NULL DEFAULT 0.0,
+    observaciones   TEXT,
+    estado_sync     TEXT NOT NULL DEFAULT 'PENDIENTE',
+    sync_mensaje    TEXT,
+    sync_intentos   INTEGER NOT NULL DEFAULT 0,
+    clave_idempotencia TEXT NOT NULL
+);
+
+-- Un parámetro medido del análisis (clave/valor/unidad + evaluación).
+CREATE TABLE parametro_analisis (
+    id_local        TEXT NOT NULL PRIMARY KEY,
+    analisis_id     TEXT NOT NULL,
+    clave           TEXT NOT NULL,          -- grasa, proteina, lactosa, densidad_medida, ...
+    valor           REAL NOT NULL,
+    unidad          TEXT NOT NULL,
+    dentro_de_rango INTEGER,                -- NULL = sin criterio aplicable
+    limite_min      REAL,
+    limite_max      REAL
+);
+
+CREATE INDEX idx_analisis_productor_fecha ON analisis(productor_id, fecha);
+CREATE INDEX idx_parametro_analisis ON parametro_analisis(analisis_id);
+
+analisis:
+SELECT * FROM analisis ORDER BY fecha DESC;
+
+analisisDeProductor:
+SELECT * FROM analisis WHERE productor_id = ? ORDER BY fecha DESC;
+
+analisisPorId:
+SELECT * FROM analisis WHERE id_local = ?;
+
+analisisDeHoy:
+SELECT * FROM analisis WHERE fecha >= :desde AND fecha < :hasta ORDER BY fecha DESC;
+
+contarObservados:
+SELECT COUNT(*) FROM analisis WHERE resultado = 'observado';
+
+contarPendientesRevision:
+SELECT COUNT(*) FROM analisis WHERE resultado = 'pendiente_revision';
+
+contarAnalisisSinSync:
+SELECT COUNT(*) FROM analisis WHERE estado_sync IN ('PENDIENTE', 'RECHAZADO');
+
+insertAnalisis:
+INSERT INTO analisis(id_local, id_remoto, uuid_publico, productor_id, fecha, equipo, fuente, resultado, agua_anadida, observaciones, estado_sync, sync_mensaje, sync_intentos, clave_idempotencia)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+marcarAnalisisSync:
+UPDATE analisis SET estado_sync = :estado, sync_mensaje = :mensaje, id_remoto = :idRemoto,
+    uuid_publico = :uuid, sync_intentos = sync_intentos + 1
+WHERE id_local = :id;
+
+parametrosDeAnalisis:
+SELECT * FROM parametro_analisis WHERE analisis_id = ? ORDER BY clave;
+
+insertParametro:
+INSERT OR REPLACE INTO parametro_analisis(id_local, analisis_id, clave, valor, unidad, dentro_de_rango, limite_min, limite_max)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- ---------- borrado local ----------
+borrarParametros:
+DELETE FROM parametro_analisis;
+
+borrarAnalisis:
+DELETE FROM analisis;

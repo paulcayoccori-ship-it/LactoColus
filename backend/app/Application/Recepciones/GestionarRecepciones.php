@@ -5,6 +5,7 @@ namespace App\Application\Recepciones;
 use App\Domain\Recepciones\RecepcionRepository;
 use App\Infrastructure\Acopios\EntregaAcopio;
 use App\Infrastructure\Acopios\JornadaAcopio;
+use App\Infrastructure\Produccion\UsoRecepcion;
 use App\Infrastructure\Recepciones\AlertaConciliacion;
 use App\Infrastructure\Recepciones\AuditoriaRecepcion;
 use App\Infrastructure\Recepciones\RecepcionPlanta;
@@ -91,6 +92,9 @@ final class GestionarRecepciones
             if ($reception->resultado === 'anulada') {
                 throw ValidationException::withMessages(['litros_planta' => 'Una recepción anulada no admite correcciones.']);
             }
+            if (bccomp((string) $data['litros_planta'], UsoRecepcion::occupied($id), 3) < 0) {
+                throw ValidationException::withMessages(['litros_planta' => 'Los litros no pueden ser inferiores a los reservados o consumidos en producción.']);
+            }
             $field = (string) EntregaAcopio::query()->where('jornada_id', $reception->jornada_id)->sum('litros');
             $plant = (string) $data['litros_planta'];
             $difference = bcsub($plant, $field, 3);
@@ -122,7 +126,11 @@ final class GestionarRecepciones
             $reception = RecepcionPlanta::query()->lockForUpdate()->findOrFail($id);
             if ($reception->resultado === 'anulada') {
                 throw ValidationException::withMessages(['resultado' => 'La recepción ya está anulada.']);
-            } $old = ['resultado' => $reception->resultado];
+            }
+            if (bccomp(UsoRecepcion::occupied($id), '0', 3) > 0) {
+                throw ValidationException::withMessages(['resultado' => 'La recepción tiene litros reservados o consumidos en producción y no puede anularse.']);
+            }
+            $old = ['resultado' => $reception->resultado];
             $reception->update(['resultado' => 'anulada']);
             AlertaConciliacion::query()->where('recepcion_id', $id)->where('estado', 'pendiente')->update(['estado' => 'resuelta', 'revisada_por' => $actorId, 'revisada_at' => now(), 'comentario_resolucion' => 'Recepción anulada: '.$reason]);
             AuditoriaRecepcion::create(['recepcion_id' => $id, 'usuario_id' => $actorId, 'accion' => 'anulacion', 'datos_anteriores' => $old, 'datos_nuevos' => ['resultado' => 'anulada'], 'motivo' => $reason]);

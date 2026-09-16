@@ -33,6 +33,14 @@ final class ConsultarAcopios
         return $this->repository->routesForCollector($actorId);
     }
 
+    public function journeysForCollector(int $actorId, array $filters, int $perPage = 15): LengthAwarePaginator
+    {
+        $user = User::findOrFail($actorId);
+        abort_unless($user->active && $user->hasRole('recolector', 'web'), 403);
+
+        return $this->repository->journeysForCollector($actorId, $filters, max(1, min($perPage, 100)));
+    }
+
     public function journeyForCollector(int $actorId, string $uuid): array
     {
         $user = User::findOrFail($actorId);

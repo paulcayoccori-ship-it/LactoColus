@@ -1,0 +1,27 @@
+-- v2: separa productor.nombre en nombres/apellidos (la API los devuelve por separado; se
+-- pierde información al concatenarlos, y el listado necesita ordenar por apellido).
+-- Se reconstruye la tabla en vez de usar ALTER TABLE ... RENAME COLUMN porque ese comando
+-- solo existe desde SQLite 3.25 y el minSdk de la app (24) puede traer una versión más vieja.
+-- No se borra ninguna fila existente: se copian todas antes de eliminar la tabla vieja.
+
+ALTER TABLE productor RENAME TO productor_v1;
+
+CREATE TABLE productor (
+    id_local        TEXT NOT NULL PRIMARY KEY,
+    id_remoto       INTEGER,
+    codigo          TEXT NOT NULL,
+    nombres         TEXT NOT NULL,
+    apellidos       TEXT NOT NULL DEFAULT '',
+    ruta_id         TEXT,
+    orden_visita    INTEGER NOT NULL DEFAULT 0,
+    activo          INTEGER NOT NULL DEFAULT 1,
+    promedio_litros REAL NOT NULL DEFAULT 0.0
+);
+
+INSERT INTO productor (id_local, id_remoto, codigo, nombres, apellidos, ruta_id, orden_visita, activo, promedio_litros)
+SELECT id_local, id_remoto, codigo, nombre, '', ruta_id, orden_visita, activo, promedio_litros
+FROM productor_v1;
+
+DROP TABLE productor_v1;
+
+CREATE INDEX idx_productor_ruta_orden ON productor(ruta_id, orden_visita);

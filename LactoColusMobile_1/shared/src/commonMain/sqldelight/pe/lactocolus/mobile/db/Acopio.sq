@@ -1,0 +1,178 @@
+-- Rutas de acopio asignadas al recolector.
+CREATE TABLE ruta (
+    id_local            TEXT NOT NULL PRIMARY KEY,
+    id_remoto           INTEGER,
+    codigo              TEXT NOT NULL,
+    nombre              TEXT NOT NULL,
+    turno               TEXT NOT NULL,      -- primera_vuelta | segunda_vuelta
+    vuelta              INTEGER NOT NULL DEFAULT 1,
+    estado              TEXT NOT NULL DEFAULT 'activa',
+    total_productores   INTEGER NOT NULL DEFAULT 0
+);
+
+-- Padrón de productores en orden de visita dentro de su ruta. `nombres`/`apellidos` separados
+-- (no concatenados) porque la API los devuelve así y el listado ordena por apellido.
+CREATE TABLE productor (
+    id_local        TEXT NOT NULL PRIMARY KEY,
+    id_remoto       INTEGER,
+    codigo          TEXT NOT NULL,
+    nombres         TEXT NOT NULL,
+    apellidos       TEXT NOT NULL DEFAULT '',
+    ruta_id         TEXT,
+    orden_visita    INTEGER NOT NULL DEFAULT 0,
+    activo          INTEGER NOT NULL DEFAULT 1,
+    promedio_litros REAL NOT NULL DEFAULT 0.0
+);
+
+-- Ejecución de una ruta en una fecha operativa y turno.
+CREATE TABLE jornada (
+    id_local        TEXT NOT NULL PRIMARY KEY,
+    id_remoto       INTEGER,
+    uuid_publico    TEXT,
+    ruta_id         TEXT NOT NULL,
+    turno           TEXT NOT NULL,
+    vuelta          INTEGER NOT NULL DEFAULT 1,
+    fecha_operativa TEXT NOT NULL,          -- ISO yyyy-MM-dd
+    estado          TEXT NOT NULL DEFAULT 'abierta',   -- abierta | cerrada | anulada
+    observaciones   TEXT,
+    total_litros    REAL NOT NULL DEFAULT 0.0,
+    total_entregas  INTEGER NOT NULL DEFAULT 0,
+    abierta_en      INTEGER NOT NULL,
+    cerrada_en      INTEGER,
+    estado_sync     TEXT NOT NULL DEFAULT 'PENDIENTE',
+    clave_idempotencia TEXT NOT NULL
+);
+
+-- Entrega de leche de un productor dentro de una jornada.
+CREATE TABLE entrega (
+    id_local        TEXT NOT NULL PRIMARY KEY,
+    id_remoto       INTEGER,
+    jornada_id      TEXT NOT NULL,
+    productor_id    TEXT NOT NULL,
+    litros          REAL,
+    no_entrego      INTEGER NOT NULL DEFAULT 0,
+    recolectada_en  INTEGER NOT NULL,
+    observacion     TEXT,
+    -- auditoría de corrección
+    litros_anterior REAL,
+    motivo_correccion TEXT,
+    corregida_en    INTEGER,
+    estado_sync     TEXT NOT NULL DEFAULT 'PENDIENTE',
+    sync_mensaje    TEXT,
+    sync_intentos   INTEGER NOT NULL DEFAULT 0,
+    clave_idempotencia TEXT NOT NULL
+);
+
+CREATE INDEX idx_entrega_jornada_productor ON entrega(jornada_id, productor_id);
+CREATE INDEX idx_productor_ruta_orden ON productor(ruta_id, orden_visita);
+CREATE INDEX idx_jornada_estado ON jornada(estado);
+
+-- ---------- ruta ----------
+rutas:
+SELECT * FROM ruta ORDER BY codigo;
+
+rutaPorId:
+SELECT * FROM ruta WHERE id_local = ?;
+
+rutaPorIdRemoto:
+SELECT * FROM ruta WHERE id_remoto = ?;
+
+insertRuta:
+INSERT OR REPLACE INTO ruta(id_local, id_remoto, codigo, nombre, turno, vuelta, estado, total_productores)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- ---------- productor ----------
+productoresDeRuta:
+SELECT * FROM productor WHERE ruta_id = ? ORDER BY orden_visita, apellidos, nombres;
+
+buscarProductores:
+SELECT * FROM productor
+WHERE activo = 1 AND (nombres LIKE '%' || :q || '%' OR apellidos LIKE '%' || :q || '%' OR codigo LIKE '%' || :q || '%')
+ORDER BY apellidos, nombres;
+
+productorPorId:
+SELECT * FROM productor WHERE id_local = ?;
+
+productorPorIdRemoto:
+SELECT * FROM productor WHERE id_remoto = ?;
+
+insertProductor:
+INSERT OR REPLACE INTO productor(id_local, id_remoto, codigo, nombres, apellidos, ruta_id, orden_visita, activo, promedio_litros)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+actualizarProductorRemoto:
+UPDATE productor SET codigo = :codigo, nombres = :nombres, apellidos = :apellidos, activo = :activo
+WHERE id_local = :id_local;
+
+asignarProductorARuta:
+UPDATE productor SET ruta_id = :ruta_id, orden_visita = :orden_visita WHERE id_local = :id_local;
+
+-- ---------- jornada ----------
+jornadas:
+SELECT * FROM jornada ORDER BY fecha_operativa DESC, abierta_en DESC;
+
+jornadaAbierta:
+SELECT * FROM jornada WHERE estado = 'abierta' ORDER BY abierta_en DESC LIMIT 1;
+
+jornadaPorId:
+SELECT * FROM jornada WHERE id_local = ?;
+
+jornadaPorIdRemoto:
+SELECT * FROM jornada WHERE id_remoto = ?;
+
+insertJornada:
+INSERT OR REPLACE INTO jornada(id_local, id_remoto, uuid_publico, ruta_id, turno, vuelta, fecha_operativa, estado, observaciones, total_litros, total_entregas, abierta_en, cerrada_en, estado_sync, clave_idempotencia)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+cerrarJornada:
+UPDATE jornada SET estado = 'cerrada', cerrada_en = :en, estado_sync = 'PENDIENTE' WHERE id_local = :id;
+
+actualizarTotalesJornada:
+UPDATE jornada
+SET total_litros = (SELECT COALESCE(SUM(litros), 0.0) FROM entrega WHERE jornada_id = :id AND no_entrego = 0),
+    total_entregas = (SELECT COUNT(*) FROM entrega WHERE jornada_id = :id)
+WHERE id_local = :id;
+
+marcarJornadaSync:
+UPDATE jornada SET estado_sync = :estado, id_remoto = :idRemoto, uuid_publico = :uuid WHERE id_local = :id;
+
+-- ---------- entrega ----------
+entregasDeJornada:
+SELECT * FROM entrega WHERE jornada_id = ? ORDER BY recolectada_en DESC;
+
+entregaDeProductorEnJornada:
+SELECT * FROM entrega WHERE jornada_id = ? AND productor_id = ? LIMIT 1;
+
+entregaPorId:
+SELECT * FROM entrega WHERE id_local = ?;
+
+insertEntrega:
+INSERT INTO entrega(id_local, id_remoto, jornada_id, productor_id, litros, no_entrego, recolectada_en, observacion, litros_anterior, motivo_correccion, corregida_en, estado_sync, sync_mensaje, sync_intentos, clave_idempotencia)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+corregirEntrega:
+UPDATE entrega
+SET litros_anterior = litros, litros = :litros, observacion = :observacion,
+    motivo_correccion = :motivo, corregida_en = :en, estado_sync = 'PENDIENTE'
+WHERE id_local = :id;
+
+marcarEntregaSync:
+UPDATE entrega SET estado_sync = :estado, sync_mensaje = :mensaje, id_remoto = :idRemoto,
+    sync_intentos = sync_intentos + 1
+WHERE id_local = :id;
+
+contarEntregasPendientes:
+SELECT COUNT(*) FROM entrega WHERE estado_sync IN ('PENDIENTE', 'RECHAZADO');
+
+-- ---------- borrado local ----------
+borrarEntregas:
+DELETE FROM entrega;
+
+borrarJornadas:
+DELETE FROM jornada;
+
+borrarProductores:
+DELETE FROM productor;
+
+borrarRutas:
+DELETE FROM ruta;

@@ -53,6 +53,22 @@ class ProductoresTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/productores')->assertUnauthorized();
     }
 
+    public function test_login_and_user_endpoint_include_role_names(): void
+    {
+        Role::findOrCreate('administrador', 'web');
+        $user = User::factory()->create(['password' => 'password']);
+        $user->assignRole('administrador');
+
+        $login = $this->postJson('/api/v1/login', ['email' => $user->email, 'password' => 'password'])->assertOk();
+        $login->assertJsonPath('data.user.id', $user->id)
+            ->assertJsonPath('data.user.name', $user->name)
+            ->assertJsonPath('data.user.email', $user->email)
+            ->assertJsonPath('data.user.roles', ['administrador']);
+
+        $token = $login->json('data.token');
+        $this->withToken($token)->getJson('/api/user')->assertOk()->assertJsonPath('roles', ['administrador']);
+    }
+
     public function test_api_crud_preserves_identifiers_and_soft_deletes(): void
     {
         $this->actingAs(User::factory()->create());
@@ -163,7 +179,8 @@ class ProductoresTest extends TestCase
     {
         $this->seed(DevelopmentSeeder::class);
         $this->seed(DevelopmentSeeder::class);
-        $this->assertDatabaseCount('roles', 4);
+        $this->assertDatabaseCount('roles', 6);
+        $this->assertDatabaseHas('roles', ['name' => 'calidad', 'guard_name' => 'web']);
         $this->assertDatabaseCount('productores', 20);
         $this->assertDatabaseCount('users', 1);
         $this->assertDatabaseMissing('roles', ['guard_name' => 'sanctum']);

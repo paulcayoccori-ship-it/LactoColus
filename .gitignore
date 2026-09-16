@@ -24,3 +24,17 @@ mobile/local.properties
 *.log
 
 graphify-out/
+graphify-out/
+
+# Android Studio / IntelliJ
+LactoColusMobile_1/.idea/
+LactoColusMobile_1/local.properties
+LactoColusMobile_1/.gradle/
+LactoColusMobile_1/build/
+LactoColusMobile_1/**/build/
+LactoColusMobile_1/.kotlin/
+
+# Capturas de pantalla
+*.png
+*.jpg
+*.jpeg
