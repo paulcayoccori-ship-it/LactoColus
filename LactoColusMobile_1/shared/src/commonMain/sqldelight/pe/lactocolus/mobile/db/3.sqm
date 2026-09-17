@@ -1,0 +1,32 @@
+-- v3: caché de solo lectura para la pantalla "Nuevo análisis" de calidad — jornadas del día con
+-- sus entregas (GET /api/v1/calidad/jornadas). Puramente aditivo: dos tablas nuevas, no toca
+-- ninguna tabla existente del recolector.
+
+CREATE TABLE jornada_calidad (
+    id_remoto         INTEGER NOT NULL PRIMARY KEY,
+    uuid_publico      TEXT NOT NULL,
+    ruta_id           INTEGER NOT NULL,
+    ruta_codigo       TEXT NOT NULL,
+    ruta              TEXT NOT NULL,
+    recolector_id     INTEGER NOT NULL,
+    recolector        TEXT NOT NULL,
+    fecha_operativa   TEXT NOT NULL,
+    turno             TEXT NOT NULL,
+    estado            TEXT NOT NULL,
+    litros            REAL NOT NULL,
+    cantidad_entregas INTEGER NOT NULL
+);
+
+CREATE TABLE entrega_calidad (
+    id_remoto            INTEGER NOT NULL PRIMARY KEY,
+    jornada_id_remoto    INTEGER NOT NULL,
+    productor_id         INTEGER NOT NULL,
+    productor_codigo     TEXT NOT NULL,
+    productor_nombres    TEXT NOT NULL,
+    productor_apellidos  TEXT NOT NULL,
+    litros               REAL NOT NULL,
+    recolectada_at       INTEGER NOT NULL,
+    tiene_analisis       INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_entrega_calidad_jornada ON entrega_calidad(jornada_id_remoto);

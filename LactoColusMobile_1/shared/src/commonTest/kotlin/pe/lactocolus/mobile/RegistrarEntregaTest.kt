@@ -28,7 +28,7 @@ private class JornadaFake(var j: Jornada?) : JornadaRepository {
     override suspend fun jornada(idLocal: String): Jornada? = j
     override suspend fun jornadaAbiertaAhora(): Jornada? = j
     override suspend fun abrirJornada(rutaId: String, turno: String, fechaOperativa: String, observaciones: String?) = Result.Failure(AppError.NoEncontrado)
-    override suspend fun cerrarJornada(idLocal: String) = Result.Success(Unit)
+    override suspend fun cerrarJornada(idLocal: String) = Result.Success(true)
     override suspend fun descargarJornadas() = Result.Success(Unit)
     override suspend fun iniciarJornadaHoy(rutaId: String, fechaOperativa: String) = Result.Failure(AppError.NoEncontrado)
 }
@@ -39,6 +39,7 @@ private class RutaFake(private val promedio: Double) : RutaRepository {
     override fun productoresDeRuta(rutaId: String) = MutableStateFlow(emptyList<Productor>())
     override fun buscarProductores(query: String) = MutableStateFlow(emptyList<Productor>())
     override suspend fun productor(idLocal: String) = Productor("p1", null, "P-001", "Julia", "Condori", "r1", 1, true, promedio)
+    override suspend fun productorPorIdRemoto(idRemoto: Long) = null
     override suspend fun descargarProductores() = Result.Success(Unit)
     override suspend fun descargarRutas() = Result.Success(Unit)
 }

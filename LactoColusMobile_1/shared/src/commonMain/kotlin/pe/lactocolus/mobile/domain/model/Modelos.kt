@@ -139,6 +139,39 @@ data class ParametroAnalisis(
     val limiteMax: Double?,
 )
 
+/**
+ * Una entrega ya sincronizada, tal como calidad la ve (`GET /api/v1/calidad/jornadas`). Solo
+ * lectura: `productorId`/`jornadaIdRemoto` son ids remotos del backend, no locales del recolector.
+ */
+data class EntregaCalidad(
+    val idRemoto: Long,
+    val jornadaIdRemoto: Long,
+    val productorId: Long,
+    val productorCodigo: String,
+    val productorNombres: String,
+    val productorApellidos: String,
+    val litros: Double,
+    val recolectadaAt: Long,
+    val tieneAnalisis: Boolean,
+)
+
+/** Jornada de un recolector tal como calidad la ve, con sus totales ya calculados por el backend. */
+data class JornadaCalidad(
+    val idRemoto: Long,
+    val uuidPublico: String,
+    val rutaId: Long,
+    val rutaCodigo: String,
+    val ruta: String,
+    val recolectorId: Long,
+    val recolector: String,
+    val fechaOperativa: String,
+    val turno: String,
+    val estado: EstadoJornada,
+    val litros: Double,
+    val cantidadEntregas: Int,
+    val analizadas: Int,
+)
+
 data class Analisis(
     val idLocal: String,
     val idRemoto: Long?,

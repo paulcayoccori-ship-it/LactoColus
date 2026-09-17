@@ -27,6 +27,7 @@ import pe.lactocolus.mobile.domain.usecase.IniciarJornadaDelDia
 import pe.lactocolus.mobile.domain.usecase.ObservarEntregasDeJornada
 import pe.lactocolus.mobile.domain.usecase.ObservarJornadaActiva
 import pe.lactocolus.mobile.domain.usecase.ObservarJornadas
+import pe.lactocolus.mobile.domain.usecase.EstadoJornadaActiva
 import pe.lactocolus.mobile.domain.usecase.ObservarProductoresDeRuta
 import pe.lactocolus.mobile.domain.usecase.ObservarRutas
 import pe.lactocolus.mobile.domain.usecase.ObtenerProductor
@@ -38,6 +39,8 @@ data class RecolectorHomeUi(
     val entregas: List<Entrega> = emptyList(),
     val rutas: List<Ruta> = emptyList(),
     val totalProductores: Int = 0,
+    /** Jornada abierta de un día anterior — nunca la de hoy. Ver [EstadoJornadaActiva]. */
+    val jornadaPendienteDeOtroDia: Jornada? = null,
 ) {
     val atendidos get() = entregas.size
     val pendientesPorVisitar get() = (totalProductores - atendidos).coerceAtLeast(0)
@@ -79,14 +82,16 @@ class RecolectorViewModel(
     val home = combine(
         observarJornadaActiva(),
         observarRutas(),
-    ) { jornada, rutas -> jornada to rutas }
-        .flatMapLatest { (jornada, rutas) ->
-            if (jornada == null) flowOf(RecolectorHomeUi(cargando = false, jornada = null, rutas = rutas))
-            else combine(
+    ) { estado, rutas -> estado to rutas }
+        .flatMapLatest { (estado, rutas) ->
+            val jornada = estado.jornadaDeHoy
+            if (jornada == null) {
+                flowOf(RecolectorHomeUi(cargando = false, jornada = null, rutas = rutas, jornadaPendienteDeOtroDia = estado.pendienteDeOtroDia))
+            } else combine(
                 observarEntregas(jornada.idLocal),
                 observarProductoresDeRuta(jornada.rutaId),
             ) { entregas, prods ->
-                RecolectorHomeUi(false, jornada, entregas, rutas, prods.size)
+                RecolectorHomeUi(false, jornada, entregas, rutas, prods.size, estado.pendienteDeOtroDia)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RecolectorHomeUi())
@@ -143,9 +148,28 @@ class RecolectorViewModel(
         }
     }
 
+    // ---- entregar a calidad (cerrar jornada desde Inicio) ----
+    private val _entregandoACalidad = MutableStateFlow(false)
+    val entregandoACalidad = _entregandoACalidad.asStateFlow()
+
+    fun entregarACalidad() {
+        val jornadaId = home.value.jornada?.idLocal ?: return
+        if (_entregandoACalidad.value) return
+        viewModelScope.launch {
+            _entregandoACalidad.value = true
+            aplicarResultadoCierre(cerrarJornadaUC(jornadaId))
+            _entregandoACalidad.value = false
+        }
+    }
+
     fun cerrarJornada(jornadaId: String) = viewModelScope.launch {
-        when (val r = cerrarJornadaUC(jornadaId)) {
-            is Result.Success -> _mensaje.value = "Jornada cerrada"
+        aplicarResultadoCierre(cerrarJornadaUC(jornadaId))
+    }
+
+    /** `enviadoAhora=true` llegó a la planta ya mismo; `false` quedó encolada sin conexión. */
+    private fun aplicarResultadoCierre(r: Result<Boolean>) {
+        when (r) {
+            is Result.Success -> _mensaje.value = if (r.value) "Jornada cerrada" else "Jornada cerrada. Se enviará a la planta cuando haya señal."
             is Result.Failure -> _mensaje.value = r.error.aMensaje()
         }
     }

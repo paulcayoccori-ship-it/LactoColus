@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -125,7 +126,7 @@ class SyncEngine(
                 ?: throw IllegalStateException("El productor de este análisis aún no se sincronizó; se reintentará.")
             api.sincronizarAnalisis(SincronizarAnalisisRequest(listOf(dto)))
         }
-        TipoEntidadSync.JORNADA -> enviarJornada(item)
+        TipoEntidadSync.JORNADA -> if (campoOpcional(item, "accion") == "cerrar") cerrarJornadaQueued(item) else enviarJornada(item)
         TipoEntidadSync.TRASLADO -> {
             api.solicitarTraslado(
                 TrasladoRequest(
@@ -168,6 +169,39 @@ class SyncEngine(
         }
     }
 
+    /**
+     * Cierra en la planta una jornada que se cerró localmente sin conexión (o cuyo intento
+     * anterior falló). Resuelve `uuid_publico` de la fila LOCAL actual, no del payload
+     * encolado — si la jornada se creó offline, su propio ítem JORNADA "abrir" normalmente ya
+     * se procesó antes en esta misma pasada (la cola se procesa en orden de creación) y le dio
+     * `uuid_publico`; si aún no lo tiene, se reintenta en la siguiente pasada. Un 422 (el
+     * backend ya la tenía cerrada, p. ej. por una carrera con otro dispositivo) se trata como
+     * éxito, transparente para el usuario — igual que [pe.lactocolus.mobile.data.repository
+     * .JornadaRepositoryImpl.cerrarJornada].
+     */
+    private suspend fun cerrarJornadaQueued(item: Cola_sync): SincronizacionResponse {
+        val local = db.acopioQueries.jornadaPorId(item.entidad_id).executeAsOneOrNull()
+            ?: throw IllegalStateException("La jornada ya no existe localmente.")
+        val uuidPublico = local.uuid_publico
+            ?: throw IllegalStateException("La jornada aún no tiene uuid remoto; se reintentará.")
+        try {
+            val remota = api.cerrarJornada(uuidPublico)
+            val cerradaEn = remota.cerradaAt?.let { runCatching { Instant.parse(it).toEpochMilliseconds() }.getOrNull() } ?: reloj.ahoraMillis()
+            db.acopioQueries.aplicarCierreJornada(
+                cerradaEn = cerradaEn,
+                totalLitros = remota.litros.toDoubleOrNull() ?: 0.0,
+                totalEntregas = remota.productoresAtendidos.toLong(),
+                idRemoto = local.id_remoto ?: remota.id,
+                uuid = uuidPublico,
+                id = item.entidad_id,
+            )
+        } catch (e: ErrorRemotoException) {
+            if (e.status != 422) throw e
+            db.acopioQueries.marcarJornadaSync("CREADO", local.id_remoto, uuidPublico, item.entidad_id)
+        }
+        return SincronizacionResponse(creados = listOf(ItemResultado(0)))
+    }
+
     private fun aplicarResultado(item: Cola_sync, r: SincronizacionResponse): Boolean {
         val ahora = reloj.ahoraMillis()
         return when {
@@ -191,10 +225,12 @@ class SyncEngine(
     }
 
     /**
-     * JORNADA en éxito (CREADO/REPETIDO) no hace nada aquí: [enviarJornada] ya escribió
-     * `id_remoto`/`uuid_publico` con el dato real devuelto por el backend, y sobreescribirlo
-     * de nuevo con `null` es exactamente el bug que descartaba el id remoto de una jornada
-     * creada offline, dejando a sus entregas sin `jornada_id` válido para sincronizar.
+     * JORNADA en éxito (CREADO/REPETIDO) no hace nada aquí: [enviarJornada]/[cerrarJornadaQueued]
+     * ya escribieron el resultado real en la fila local. En RECHAZADO, solo se resetea
+     * `id_remoto`/`uuid_publico` para un ítem "abrir" — es lo que nunca los tuvo. Un "cerrar"
+     * rechazado (p. ej. sin red) debe conservar el `id_remoto`/`uuid_publico` que la jornada ya
+     * tenía de cuando se abrió; pisarlos con `null` aquí rompería la sincronización de sus
+     * entregas y de todo reintento posterior del propio cierre.
      */
     private fun actualizarEntidad(item: Cola_sync, estado: String, mensaje: String?) {
         when (item.tipoEntidad()) {
@@ -203,7 +239,9 @@ class SyncEngine(
             TipoEntidadSync.ANALISIS ->
                 db.calidadQueries.marcarAnalisisSync(estado, mensaje, null, null, item.entidad_id)
             TipoEntidadSync.JORNADA ->
-                if (estado == "RECHAZADO") db.acopioQueries.marcarJornadaSync(estado, null, null, item.entidad_id)
+                if (estado == "RECHAZADO" && campoOpcional(item, "accion") != "cerrar") {
+                    db.acopioQueries.marcarJornadaSync(estado, null, null, item.entidad_id)
+                }
             TipoEntidadSync.TRASLADO ->
                 db.productorQueries.marcarTrasladoSync(estado, mensaje, null, item.entidad_id)
             TipoEntidadSync.LECTURA_COMUNICADO -> Unit
@@ -262,6 +300,7 @@ class SyncEngine(
             aguaAnadida = campo(item, "agua_anadida").toDouble(),
             densidadCorregida = campoOpcional(item, "densidad_corregida")?.toDoubleOrNull(),
             solidosTotales = campoOpcional(item, "solidos_totales")?.toDoubleOrNull(),
+            entregaId = campoOpcional(item, "entrega_id")?.toLongOrNull(),
             equipo = campoOpcional(item, "equipo"),
             observaciones = campoOpcional(item, "observaciones"),
         )

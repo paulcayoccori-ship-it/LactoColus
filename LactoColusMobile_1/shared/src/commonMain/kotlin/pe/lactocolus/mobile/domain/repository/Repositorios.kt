@@ -6,7 +6,9 @@ import pe.lactocolus.mobile.domain.model.Analisis
 import pe.lactocolus.mobile.domain.model.ColaSyncItem
 import pe.lactocolus.mobile.domain.model.Comunicado
 import pe.lactocolus.mobile.domain.model.Entrega
+import pe.lactocolus.mobile.domain.model.EntregaCalidad
 import pe.lactocolus.mobile.domain.model.Jornada
+import pe.lactocolus.mobile.domain.model.JornadaCalidad
 import pe.lactocolus.mobile.domain.model.Liquidacion
 import pe.lactocolus.mobile.domain.model.ParametroAnalisis
 import pe.lactocolus.mobile.domain.model.Productor
@@ -39,6 +41,9 @@ interface RutaRepository {
     fun buscarProductores(query: String): Flow<List<Productor>>
     suspend fun productor(idLocal: String): Productor?
 
+    /** Resuelve el id remoto de un productor (p. ej. el de una entrega vista por calidad) al uuid local. */
+    suspend fun productorPorIdRemoto(idRemoto: Long): Productor?
+
     /**
      * Downloads every page of `GET /api/v1/productores` and upserts it into SQLite by
      * `id_remoto` (never duplicates). Offline-first: on failure (no network, 401, 403) it
@@ -65,7 +70,15 @@ interface JornadaRepository {
     suspend fun jornadaAbiertaAhora(): Jornada?
 
     suspend fun abrirJornada(rutaId: String, turno: String, fechaOperativa: String, observaciones: String?): Result<Jornada>
-    suspend fun cerrarJornada(idLocal: String): Result<Unit>
+
+    /**
+     * Cierra la jornada en la planta: llama a `POST .../jornadas/{uuid}/cerrar` y aplica los
+     * totales que devuelve el backend a la fila local. Devuelve `true` si llegó al backend ahora
+     * mismo, `false` si no hay `uuid_publico` todavía o no hay conexión — en ese caso cierra
+     * localmente y encola el cierre para el siguiente `sincronizarTodo()`, sin bloquear al
+     * recolector. Si el backend responde que ya estaba cerrada (422), lo trata como éxito.
+     */
+    suspend fun cerrarJornada(idLocal: String): Result<Boolean>
 
     /** Downloads `GET /api/v1/acopios/jornadas` (every page) and upserts by `id_remoto`. */
     suspend fun descargarJornadas(): Result<Unit>
@@ -98,6 +111,8 @@ interface AnalisisRepository {
     fun analisisDeProductor(productorId: String): Flow<List<Analisis>>
     suspend fun analisisPorId(idLocal: String): Analisis?
     fun resumenHoy(): Flow<ResumenCalidad>
+
+    /** `entregaId` (remoto) es cómo el backend liga el análisis a una entrega concreta. */
     suspend fun registrarAnalisis(
         productorId: String,
         fechaMillis: Long,
@@ -105,6 +120,7 @@ interface AnalisisRepository {
         parametros: List<ParametroAnalisis>,
         aguaAnadida: Double,
         observaciones: String?,
+        entregaId: Long? = null,
     ): Result<Analisis>
 }
 
@@ -114,6 +130,19 @@ data class ResumenCalidad(
     val pendientes: Int,
     val sinSincronizar: Int,
 )
+
+/**
+ * Jornadas y entregas ya sincronizadas, tal como calidad las navega para elegir a quién
+ * analizar — caché de solo lectura de `GET /api/v1/calidad/jornadas`, independiente del catálogo
+ * local del recolector (ver `Calidad.sq`: tablas `jornada_calidad`/`entrega_calidad`).
+ */
+interface CalidadJornadaRepository {
+    fun jornadasDeHoy(): Flow<List<JornadaCalidad>>
+    fun entregasDeJornada(jornadaIdRemoto: Long): Flow<List<EntregaCalidad>>
+
+    /** Descarga todas las páginas de hoy y hace upsert por id remoto en una sola transacción. */
+    suspend fun descargarJornadas(): Result<Unit>
+}
 
 interface ComunicadoRepository {
     fun comunicados(): Flow<List<Comunicado>>

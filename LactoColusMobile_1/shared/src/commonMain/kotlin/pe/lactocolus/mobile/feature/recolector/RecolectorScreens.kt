@@ -62,12 +62,14 @@ fun RecolectorInicioScreen(
     val home by vm.home.collectAsStateWithLifecycle()
     val refrescando by vm.refrescando.collectAsStateWithLifecycle()
     val iniciando by vm.iniciandoJornada.collectAsStateWithLifecycle()
+    val entregando by vm.entregandoACalidad.collectAsStateWithLifecycle()
+    var confirmarEntrega by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.refrescarCatalogo() }
     if (home.cargando) return
+    val j = home.jornada
 
     PullToRefreshBox(isRefreshing = refrescando, onRefresh = vm::refrescarCatalogo) {
         PantallaScroll {
-            val j = home.jornada
             when {
                 j != null -> {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -85,6 +87,8 @@ fun RecolectorInicioScreen(
                     home.entregas.take(4).forEach { EntregaFila(it) }
                     Spacer(Modifier.height(Space.sm))
                     BotonPrincipal("Ver resumen de jornada", { onResumen(j.idLocal) })
+                    Spacer(Modifier.height(Space.sm))
+                    BotonPrincipal("Entregar a calidad", { confirmarEntrega = true }, cargando = entregando)
                 }
                 home.rutas.isEmpty() -> {
                     EstadoVacio("Sin ruta asignada", "Todavía no tienes una ruta asignada. Contacta al administrador para empezar.")
@@ -93,9 +97,29 @@ fun RecolectorInicioScreen(
                     EstadoVacio("Sin jornada activa", "Inicia tu jornada del día para empezar a registrar entregas.")
                     Spacer(Modifier.height(Space.md))
                     BotonPrincipal("Iniciar jornada", vm::iniciarJornadaDelDia, cargando = iniciando)
+                    home.jornadaPendienteDeOtroDia?.let { pendiente ->
+                        Spacer(Modifier.height(Space.sm))
+                        TarjetaBase(onClick = { onResumen(pendiente.idLocal) }) {
+                            Text(
+                                "Quedó una jornada sin cerrar del ${Formato.fecha(pendiente.abiertaEn)}. Toca para cerrarla.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                 }
             }
         }
+    }
+
+    if (confirmarEntrega && j != null) {
+        DialogoConfirmacion(
+            "Entregar a calidad",
+            "Atendiste ${home.atendidos} productores, ${home.pendientesPorVisitar} quedaron sin visitar. Total: ${Formato.litros(j.totalLitros)}.",
+            "Entregar",
+            onConfirmar = { confirmarEntrega = false; vm.entregarACalidad() },
+            onCancelar = { confirmarEntrega = false },
+        )
     }
 }
 
@@ -242,13 +266,16 @@ fun ConfirmacionScreen(entregaId: String, onSeguir: () -> Unit) {
 // ---------- r_resumen ----------
 @Composable
 fun ResumenJornadaScreen(vm: RecolectorViewModel, jornadaId: String, onCerrada: () -> Unit) {
-    val entregas by vm.entregasDeJornada(jornadaId).collectAsStateWithLifecycle()
+    val entregas by remember(jornadaId) { vm.entregasDeJornada(jornadaId) }.collectAsStateWithLifecycle()
     val jornadas by vm.jornadas.collectAsStateWithLifecycle()
     val jornada = jornadas.firstOrNull { it.idLocal == jornadaId }
     var confirmar by remember { mutableStateOf(false) }
     val mensaje by vm.mensaje.collectAsStateWithLifecycle()
 
-    LaunchedEffect(mensaje) { if (mensaje == "Jornada cerrada") { onCerrada(); vm.consumirMensaje() } }
+    // "Jornada cerrada..." cubre tanto el cierre en línea como el que quedó encolado sin
+    // conexión (mensajes distintos, ver RecolectorViewModel.aplicarResultadoCierre) — ambos
+    // deben sacar de esta pantalla igual, es transparente para el recolector.
+    LaunchedEffect(mensaje) { if (mensaje?.startsWith("Jornada cerrada") == true) { onCerrada(); vm.consumirMensaje() } }
 
     PantallaScroll {
         FilaIndicadores(

@@ -35,6 +35,13 @@ private data class RutasEnvelope(val data: List<RutaRemota> = emptyList())
 private data class JornadaEnvelope(val data: JornadaRemota? = null)
 
 @Serializable
+private data class JornadaCerradaEnvelope(val data: JornadaCerradaRemota)
+
+/** `GET /api/v1/calidad/jornadas` isn't paginated (`Collection::get()`, not `paginate()`) — no `meta`/`links`. */
+@Serializable
+private data class JornadasCalidadEnvelope(val data: List<JornadaCalidadRemota> = emptyList())
+
+@Serializable
 private data class SincronizacionEnvelope(val data: SincronizacionResponse)
 
 /**
@@ -155,6 +162,37 @@ class KtorLactoColusApi(
             throw ErrorRemotoException(response.status.value)
         }
         return response.body<JornadaEnvelope>().data ?: throw ErrorRemotoException(response.status.value)
+    }
+
+    override suspend fun cerrarJornada(uuidPublico: String): JornadaCerradaRemota {
+        val token = db.usuarioQueries.sesionActual().executeAsOneOrNull()?.token ?: throw SesionAusenteException()
+        val response = client.post("$baseUrl/acopios/jornadas/$uuidPublico/cerrar") {
+            accept(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        if (!response.status.isSuccess()) {
+            throw ErrorRemotoException(response.status.value)
+        }
+        return response.body<JornadaCerradaEnvelope>().data
+    }
+
+    override suspend fun listarJornadasCalidad(
+        fecha: String?,
+        estado: String?,
+        recolectorId: Long?,
+    ): List<JornadaCalidadRemota> {
+        val token = db.usuarioQueries.sesionActual().executeAsOneOrNull()?.token ?: throw SesionAusenteException()
+        val response = client.get("$baseUrl/calidad/jornadas") {
+            accept(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            fecha?.let { parameter("fecha", it) }
+            estado?.let { parameter("estado", it) }
+            recolectorId?.let { parameter("recolector_id", it) }
+        }
+        if (!response.status.isSuccess()) {
+            throw ErrorRemotoException(response.status.value)
+        }
+        return response.body<JornadasCalidadEnvelope>().data
     }
 
     override suspend fun solicitarTraslado(req: TrasladoRequest): RegistroRemoto =

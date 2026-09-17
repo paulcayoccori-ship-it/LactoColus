@@ -2,6 +2,7 @@ package pe.lactocolus.mobile.domain.usecase
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import pe.lactocolus.mobile.core.common.AppError
 import pe.lactocolus.mobile.core.common.Reloj
 import pe.lactocolus.mobile.core.common.Result
@@ -14,6 +15,7 @@ import pe.lactocolus.mobile.domain.model.Ruta
 import pe.lactocolus.mobile.domain.repository.EntregaRepository
 import pe.lactocolus.mobile.domain.repository.JornadaRepository
 import pe.lactocolus.mobile.domain.repository.RutaRepository
+import pe.lactocolus.mobile.domain.repository.SyncRepository
 
 class ObservarRutas(private val repo: RutaRepository) {
     operator fun invoke(): Flow<List<Ruta>> = repo.rutas()
@@ -46,8 +48,31 @@ class DescargarJornadas(private val repo: JornadaRepository) {
     suspend operator fun invoke(): Result<Unit> = repo.descargarJornadas()
 }
 
-class ObservarJornadaActiva(private val repo: JornadaRepository) {
-    operator fun invoke(): Flow<Jornada?> = repo.jornadaAbierta()
+/**
+ * Estado de "jornada activa" para Inicio. [jornadaDeHoy] es la única que se ofrece para seguir
+ * registrando entregas; una jornada abierta de un día anterior nunca aparece ahí — se refleja en
+ * [pendienteDeOtroDia] para que la pantalla avise y ofrezca cerrarla, sin bloquear el botón de
+ * iniciar la de hoy.
+ *
+ * Límite conocido: [pe.lactocolus.mobile.domain.repository.JornadaRepository.jornadaAbierta] solo
+ * expone la jornada abierta más reciente (una fila). Si además de una pendiente de un día
+ * anterior se abre la de hoy, esa consulta deja de devolver la anterior (la tapa la más nueva) y
+ * el aviso desaparece aunque la antigua siga abierta — caso raro (recolector sin cerrar varios
+ * días seguidos) que esta entrega no resuelve.
+ */
+data class EstadoJornadaActiva(val jornadaDeHoy: Jornada?, val pendienteDeOtroDia: Jornada?)
+
+/**
+ * La decisión de qué jornada es "la activa de hoy" vive aquí, no en el ViewModel ni el
+ * composable: compara `fechaOperativa` de la jornada abierta más reciente contra la fecha
+ * operativa actual antes de ofrecerla como la jornada en curso.
+ */
+class ObservarJornadaActiva(private val repo: JornadaRepository, private val reloj: Reloj) {
+    operator fun invoke(): Flow<EstadoJornadaActiva> = repo.jornadaAbierta().map { abierta ->
+        if (abierta == null) return@map EstadoJornadaActiva(null, null)
+        val hoy = fechaOperativaIso(reloj.ahoraMillis())
+        if (abierta.fechaOperativa == hoy) EstadoJornadaActiva(abierta, null) else EstadoJornadaActiva(null, abierta)
+    }
 }
 
 class ObservarJornadas(private val repo: JornadaRepository) {
@@ -83,12 +108,23 @@ class AbrirJornada(private val repo: JornadaRepository) {
     }
 }
 
-class CerrarJornada(private val repo: JornadaRepository) {
-    suspend operator fun invoke(idLocal: String): Result<Unit> {
+/**
+ * Cierra la jornada y la entrega a calidad. Orquesta, en orden, lo que pide el spec: primero
+ * sube todo lo pendiente de la cola (para que ninguna entrega se quede sin subir y, si la
+ * jornada se abrió sin conexión, para que gane su `uuid_publico` antes del siguiente paso), y
+ * luego llama al cierre real — [pe.lactocolus.mobile.domain.repository.JornadaRepository
+ * .cerrarJornada] decide ahí si pudo llegar al backend o si quedó encolada sin conexión.
+ * `sincronizarTodo()` es best-effort: si falla (sin red) no se aborta el cierre, simplemente cae
+ * al camino offline del repositorio. Devuelve `true` si se entregó a la planta ahora mismo,
+ * `false` si quedó pendiente de conexión — el llamador decide el mensaje según ese valor.
+ */
+class CerrarJornada(private val repo: JornadaRepository, private val sync: SyncRepository) {
+    suspend operator fun invoke(idLocal: String): Result<Boolean> {
         val j = repo.jornada(idLocal) ?: return Result.Failure(AppError.NoEncontrado)
         if (j.estado != EstadoJornada.ABIERTA) {
             return Result.Failure(AppError.Conflicto("La jornada ya no está abierta"))
         }
+        sync.sincronizarTodo()
         return repo.cerrarJornada(idLocal)
     }
 }

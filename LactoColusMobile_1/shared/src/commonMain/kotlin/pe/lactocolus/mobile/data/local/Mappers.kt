@@ -4,10 +4,12 @@ import pe.lactocolus.mobile.domain.model.Analisis
 import pe.lactocolus.mobile.domain.model.ColaSyncItem
 import pe.lactocolus.mobile.domain.model.Comunicado
 import pe.lactocolus.mobile.domain.model.Entrega
+import pe.lactocolus.mobile.domain.model.EntregaCalidad
 import pe.lactocolus.mobile.domain.model.EstadoJornada
 import pe.lactocolus.mobile.domain.model.EstadoSync
 import pe.lactocolus.mobile.domain.model.EstadoTraslado
 import pe.lactocolus.mobile.domain.model.Jornada
+import pe.lactocolus.mobile.domain.model.JornadaCalidad
 import pe.lactocolus.mobile.domain.model.Liquidacion
 import pe.lactocolus.mobile.domain.model.ParametroAnalisis
 import pe.lactocolus.mobile.domain.model.Productor
@@ -23,7 +25,9 @@ import pe.lactocolus.mobile.db.Analisis as DbAnalisis
 import pe.lactocolus.mobile.db.Cola_sync as DbColaSync
 import pe.lactocolus.mobile.db.Comunicado as DbComunicado
 import pe.lactocolus.mobile.db.Entrega as DbEntrega
+import pe.lactocolus.mobile.db.Entrega_calidad as DbEntregaCalidad
 import pe.lactocolus.mobile.db.Jornada as DbJornada
+import pe.lactocolus.mobile.db.JornadasDeHoy as DbJornadaCalidad
 import pe.lactocolus.mobile.db.Liquidacion as DbLiquidacion
 import pe.lactocolus.mobile.db.Parametro_analisis as DbParametro
 import pe.lactocolus.mobile.db.Productor as DbProductor
@@ -99,6 +103,34 @@ internal fun DbEntrega.toDomain() = Entrega(
     corregidaEn = corregida_en,
     estadoSync = EstadoSync.fromDb(estado_sync, sync_mensaje),
     intentos = sync_intentos.toInt(),
+)
+
+internal fun DbEntregaCalidad.toDomain() = EntregaCalidad(
+    idRemoto = id_remoto,
+    jornadaIdRemoto = jornada_id_remoto,
+    productorId = productor_id,
+    productorCodigo = productor_codigo,
+    productorNombres = productor_nombres,
+    productorApellidos = productor_apellidos,
+    litros = litros,
+    recolectadaAt = recolectada_at,
+    tieneAnalisis = tiene_analisis.toBool(),
+)
+
+internal fun DbJornadaCalidad.toDomain() = JornadaCalidad(
+    idRemoto = id_remoto,
+    uuidPublico = uuid_publico,
+    rutaId = ruta_id,
+    rutaCodigo = ruta_codigo,
+    ruta = ruta,
+    recolectorId = recolector_id,
+    recolector = recolector,
+    fechaOperativa = fecha_operativa,
+    turno = turno,
+    estado = EstadoJornada.from(estado),
+    litros = litros,
+    cantidadEntregas = cantidad_entregas.toInt(),
+    analizadas = analizadas.toInt(),
 )
 
 internal fun DbAnalisis.toDomain(parametros: List<ParametroAnalisis>) = Analisis(

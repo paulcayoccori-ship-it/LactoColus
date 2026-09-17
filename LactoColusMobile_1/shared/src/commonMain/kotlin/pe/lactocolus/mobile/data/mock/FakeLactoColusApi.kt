@@ -6,6 +6,8 @@ import pe.lactocolus.mobile.data.remote.AnalisisSyncDto
 import pe.lactocolus.mobile.data.remote.EntregaSyncDto
 import pe.lactocolus.mobile.data.remote.ErrorRemotoException
 import pe.lactocolus.mobile.data.remote.ItemResultado
+import pe.lactocolus.mobile.data.remote.JornadaCalidadRemota
+import pe.lactocolus.mobile.data.remote.JornadaCerradaRemota
 import pe.lactocolus.mobile.data.remote.JornadaListadoRemota
 import pe.lactocolus.mobile.data.remote.JornadaRemota
 import pe.lactocolus.mobile.data.remote.JornadasPaginaRemota
@@ -92,12 +94,35 @@ class FakeLactoColusApi : LactoColusApi {
             fechaOperativa = req.fechaOperativa,
             turno = req.turno,
             estado = "abierta",
+            productoresAtendidos = 0,
+            litros = "0.000",
         )
         jornadaAbiertaFake = creada
         return JornadaRemota(
             id = creada.id, uuidPublico = creada.uuidPublico, rutaId = creada.rutaId,
             fechaOperativa = creada.fechaOperativa, turno = creada.turno, estado = creada.estado,
         )
+    }
+
+    override suspend fun cerrarJornada(uuidPublico: String): JornadaCerradaRemota {
+        delay(200)
+        val abierta = jornadaAbiertaFake ?: throw ErrorRemotoException(422)
+        if (abierta.uuidPublico != uuidPublico) throw ErrorRemotoException(422)
+        jornadaAbiertaFake = null
+
+        return JornadaCerradaRemota(
+            id = abierta.id, uuidPublico = abierta.uuidPublico, rutaId = abierta.rutaId,
+            estado = "cerrada", productoresAtendidos = 0, litros = "0.000",
+        )
+    }
+
+    override suspend fun listarJornadasCalidad(
+        fecha: String?,
+        estado: String?,
+        recolectorId: Long?,
+    ): List<JornadaCalidadRemota> {
+        delay(200)
+        return emptyList()
     }
 
     override suspend fun solicitarTraslado(req: TrasladoRequest): RegistroRemoto {

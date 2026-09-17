@@ -4,9 +4,14 @@ import kotlinx.coroutines.flow.Flow
 import pe.lactocolus.mobile.core.common.AppError
 import pe.lactocolus.mobile.core.common.Result
 import pe.lactocolus.mobile.domain.model.Analisis
+import pe.lactocolus.mobile.domain.model.EntregaCalidad
+import pe.lactocolus.mobile.domain.model.JornadaCalidad
 import pe.lactocolus.mobile.domain.model.ParametroAnalisis
+import pe.lactocolus.mobile.domain.model.Productor
 import pe.lactocolus.mobile.domain.repository.AnalisisRepository
+import pe.lactocolus.mobile.domain.repository.CalidadJornadaRepository
 import pe.lactocolus.mobile.domain.repository.ResumenCalidad
+import pe.lactocolus.mobile.domain.repository.RutaRepository
 
 /**
  * Rangos de captura del formulario Lactoscan (backend/docs/control-calidad.md). Son controles
@@ -56,6 +61,30 @@ class ObtenerAnalisis(private val repo: AnalisisRepository) {
     suspend operator fun invoke(idLocal: String): Analisis? = repo.analisisPorId(idLocal)
 }
 
+/** Nivel 1 de "Nuevo análisis": jornadas del día con entregas registradas, una por recolector. */
+class ObservarJornadasCalidad(private val repo: CalidadJornadaRepository) {
+    operator fun invoke(): Flow<List<JornadaCalidad>> = repo.jornadasDeHoy()
+}
+
+/** Nivel 2: entregas de la jornada elegida, cada una marcada si ya tiene análisis o no. */
+class ObservarEntregasDeJornadaCalidad(private val repo: CalidadJornadaRepository) {
+    operator fun invoke(jornadaIdRemoto: Long): Flow<List<EntregaCalidad>> = repo.entregasDeJornada(jornadaIdRemoto)
+}
+
+/** Background catalog refresh — see [CalidadJornadaRepository.descargarJornadas]. */
+class DescargarJornadasCalidad(private val repo: CalidadJornadaRepository) {
+    suspend operator fun invoke(): Result<Unit> = repo.descargarJornadas()
+}
+
+/**
+ * Resuelve el productor local (uuid) a partir del id remoto que trae una entrega vista por
+ * calidad — el formulario de análisis necesita el uuid local, [repo.registrarAnalisis] lo
+ * escribe así en SQLite igual que el resto del catálogo.
+ */
+class ObtenerProductorPorIdRemoto(private val repo: RutaRepository) {
+    suspend operator fun invoke(idRemoto: Long): Productor? = repo.productorPorIdRemoto(idRemoto)
+}
+
 /** Resultado de validar el borrador del formulario de análisis, un mensaje por campo inválido. */
 data class ResultadoValidacionAnalisis(val errores: Map<ParametroCalidad, String>) {
     val esValido: Boolean get() = errores.isEmpty()
@@ -103,7 +132,9 @@ class ValidarAnalisis {
  * `agua_anadida` o `ph` sería una afirmación sobre la leche que nadie midió. Si el equipo reporta
  * agua añadida > 0 la muestra queda observada y se avisa de forma destacada. No se declara
  * "conforme" sin un perfil completo (fuera de alcance) — el resultado por defecto es pendiente
- * de revisión.
+ * de revisión. `entregaId` (remoto) liga el análisis a la entrega concreta que calidad eligió —
+ * con eso el backend deduce la jornada solo y marca esa entrega como analizada; sin él, la
+ * entrega nunca deja de aparecer como pendiente aunque el productor coincida.
  */
 class RegistrarAnalisis(private val repo: AnalisisRepository, private val validar: ValidarAnalisis) {
     suspend operator fun invoke(
@@ -112,6 +143,7 @@ class RegistrarAnalisis(private val repo: AnalisisRepository, private val valida
         equipo: String?,
         textos: Map<ParametroCalidad, String>,
         observaciones: String?,
+        entregaId: Long? = null,
     ): Result<Analisis> {
         if (productorId.isBlank()) return Result.Failure(AppError.Validacion("Elige un productor", "productor"))
 
@@ -133,6 +165,6 @@ class RegistrarAnalisis(private val repo: AnalisisRepository, private val valida
                 limiteMax = null,
             )
         }
-        return repo.registrarAnalisis(productorId, fechaMillis, equipo?.trim().takeUnless { it.isNullOrEmpty() }, parametros, agua, observaciones?.trim().takeUnless { it.isNullOrEmpty() })
+        return repo.registrarAnalisis(productorId, fechaMillis, equipo?.trim().takeUnless { it.isNullOrEmpty() }, parametros, agua, observaciones?.trim().takeUnless { it.isNullOrEmpty() }, entregaId)
     }
 }

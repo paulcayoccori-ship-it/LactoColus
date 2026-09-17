@@ -4,9 +4,12 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.Instant
 import pe.lactocolus.mobile.core.common.AppError
 import pe.lactocolus.mobile.core.common.DispatcherProvider
 import pe.lactocolus.mobile.core.common.Reloj
@@ -17,8 +20,10 @@ import pe.lactocolus.mobile.core.ui.Formato
 import pe.lactocolus.mobile.data.local.toDomain
 import pe.lactocolus.mobile.data.remote.AbrirJornadaRequest
 import pe.lactocolus.mobile.data.remote.ErrorRemotoException
+import pe.lactocolus.mobile.data.remote.JornadaCerradaRemota
 import pe.lactocolus.mobile.data.remote.JornadaListadoRemota
 import pe.lactocolus.mobile.data.remote.LactoColusApi
+import pe.lactocolus.mobile.data.remote.ProductorRemoto
 import pe.lactocolus.mobile.data.sync.EstadoApp
 import pe.lactocolus.mobile.db.LactoColusDb
 import pe.lactocolus.mobile.domain.model.Entrega
@@ -29,6 +34,7 @@ import pe.lactocolus.mobile.domain.model.TipoEntidadSync
 import pe.lactocolus.mobile.domain.repository.EntregaRepository
 import pe.lactocolus.mobile.domain.repository.JornadaRepository
 import pe.lactocolus.mobile.domain.repository.RutaRepository
+import pe.lactocolus.mobile.domain.repository.SyncRepository
 import pe.lactocolus.mobile.db.Jornada as DbJornada
 
 class RutaRepositoryImpl(
@@ -58,44 +64,55 @@ class RutaRepositoryImpl(
         q.productorPorId(idLocal).executeAsOneOrNull()?.toDomain()
     }
 
+    override suspend fun productorPorIdRemoto(idRemoto: Long): Productor? = withContext(dispatchers.io) {
+        q.productorPorIdRemoto(idRemoto).executeAsOneOrNull()?.toDomain()
+    }
+
     override suspend fun descargarProductores(): Result<Unit> = withContext(dispatchers.io) {
         try {
+            // Igual que descargarJornadas(): se piden TODAS las páginas primero (solo red) y se
+            // escribe en UNA transacción al final — un commit por página reemitiría los Flow que
+            // leen `productor` (búsqueda, listado de ruta) en cada página, causando parpadeo
+            // mientras dura la descarga.
+            val todos = mutableListOf<ProductorRemoto>()
             var pagina = 1
             var ultimaPagina = 1
             do {
                 val respuesta = api.listarProductores(pagina, PRODUCTORES_POR_PAGINA)
-                db.transaction {
-                    respuesta.data.forEach { remoto ->
-                        val activo = if (remoto.estado) 1L else 0L
-                        val existente = q.productorPorIdRemoto(remoto.id).executeAsOneOrNull()
-                        if (existente != null) {
-                            q.actualizarProductorRemoto(
-                                codigo = remoto.codigo,
-                                nombres = remoto.nombres,
-                                apellidos = remoto.apellidos,
-                                activo = activo,
-                                id_local = existente.id_local,
-                            )
-                        } else {
-                            // ruta_id/orden_visita/promedio_litros: el endpoint no los devuelve,
-                            // se dejan en su default (null / 0 / 0.0) — no se inventan.
-                            q.insertProductor(
-                                id_local = randomUuid(),
-                                id_remoto = remoto.id,
-                                codigo = remoto.codigo,
-                                nombres = remoto.nombres,
-                                apellidos = remoto.apellidos,
-                                ruta_id = null,
-                                orden_visita = 0,
-                                activo = activo,
-                                promedio_litros = 0.0,
-                            )
-                        }
-                    }
-                }
+                todos += respuesta.data
                 ultimaPagina = respuesta.meta.ultimaPagina.coerceAtLeast(1)
                 pagina++
             } while (pagina <= ultimaPagina)
+
+            db.transaction {
+                todos.forEach { remoto ->
+                    val activo = if (remoto.estado) 1L else 0L
+                    val existente = q.productorPorIdRemoto(remoto.id).executeAsOneOrNull()
+                    if (existente != null) {
+                        q.actualizarProductorRemoto(
+                            codigo = remoto.codigo,
+                            nombres = remoto.nombres,
+                            apellidos = remoto.apellidos,
+                            activo = activo,
+                            id_local = existente.id_local,
+                        )
+                    } else {
+                        // ruta_id/orden_visita/promedio_litros: el endpoint no los devuelve,
+                        // se dejan en su default (null / 0 / 0.0) — no se inventan.
+                        q.insertProductor(
+                            id_local = randomUuid(),
+                            id_remoto = remoto.id,
+                            codigo = remoto.codigo,
+                            nombres = remoto.nombres,
+                            apellidos = remoto.apellidos,
+                            ruta_id = null,
+                            orden_visita = 0,
+                            activo = activo,
+                            promedio_litros = 0.0,
+                        )
+                    }
+                }
+            }
             Result.Success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -216,12 +233,64 @@ class JornadaRepositoryImpl(
             Result.Success(q.jornadaPorId(id).executeAsOne().toDomain())
         }
 
-    override suspend fun cerrarJornada(idLocal: String): Result<Unit> = withContext(dispatchers.io) {
+    override suspend fun cerrarJornada(idLocal: String): Result<Boolean> = withContext(dispatchers.io) {
         val j = q.jornadaPorId(idLocal).executeAsOneOrNull()
             ?: return@withContext Result.Failure(AppError.NoEncontrado)
+        if (j.estado != "abierta") return@withContext Result.Success(true)
+
+        val uuidPublico = j.uuid_publico
+        if (uuidPublico == null) {
+            // Aún no tiene uuid remoto (se creó sin conexión y no ha sincronizado todavía): no se
+            // puede llamar al endpoint. Se cierra localmente y se encola para el próximo intento.
+            cerrarLocalmenteYEncolar(idLocal)
+            return@withContext Result.Success(false)
+        }
+        try {
+            val remota = api.cerrarJornada(uuidPublico)
+            aplicarCierreRemoto(idLocal, j.id_remoto, uuidPublico, remota)
+            estadoApp.sincronizacionTerminada(reloj.ahoraMillis())
+            Result.Success(true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ErrorRemotoException) {
+            if (e.status == 422) {
+                // El backend ya la tenía cerrada (reintento o carrera con otro dispositivo) —
+                // transparente para el usuario: se refleja localmente como éxito, sin error.
+                q.cerrarJornada(reloj.ahoraMillis(), idLocal)
+                q.actualizarTotalesJornada(idLocal)
+                q.marcarJornadaSync("CREADO", j.id_remoto, uuidPublico, idLocal)
+                Result.Success(true)
+            } else {
+                cerrarLocalmenteYEncolar(idLocal)
+                Result.Success(false)
+            }
+        } catch (e: Exception) {
+            // Sin conexión u otro fallo de red: la leche ya se entregó, no se bloquea al
+            // recolector — se cierra localmente y se reintenta en la próxima sincronización.
+            cerrarLocalmenteYEncolar(idLocal)
+            Result.Success(false)
+        }
+    }
+
+    /** Escribe en la fila local los totales autoritativos que devolvió el backend al cerrar. */
+    private fun aplicarCierreRemoto(idLocal: String, idRemoto: Long?, uuidPublico: String, remota: JornadaCerradaRemota) {
+        val cerradaEn = remota.cerradaAt?.let { runCatching { Instant.parse(it).toEpochMilliseconds() }.getOrNull() } ?: reloj.ahoraMillis()
+        q.aplicarCierreJornada(
+            cerradaEn = cerradaEn,
+            totalLitros = remota.litros.toDoubleOrNull() ?: 0.0,
+            totalEntregas = remota.productoresAtendidos.toLong(),
+            idRemoto = idRemoto ?: remota.id,
+            uuid = uuidPublico,
+            id = idLocal,
+        )
+    }
+
+    /** Sin conexión (o error no-422): cierra la jornada localmente y encola el cierre remoto. */
+    private fun cerrarLocalmenteYEncolar(idLocal: String) {
         q.cerrarJornada(reloj.ahoraMillis(), idLocal)
         q.actualizarTotalesJornada(idLocal)
-        Result.Success(Unit)
+        val payload = jsonPayload("accion" to "cerrar")
+        cola.encolar(TipoEntidadSync.JORNADA, idLocal, idLocal, payload)
     }
 
     override suspend fun descargarJornadas(): Result<Unit> = withContext(dispatchers.io) {
@@ -246,7 +315,11 @@ class JornadaRepositoryImpl(
                     val existente = q.jornadaPorIdRemoto(remoto.id).executeAsOneOrNull()
                     val rutaIdLocal = rutaLocal?.id_local ?: existente?.ruta_id
                     if (rutaIdLocal != null) {
-                        guardarJornadaRemota(existente, remoto.id, remoto.uuidPublico, rutaIdLocal, remoto.fechaOperativa, remoto.turno, remoto.estado)
+                        guardarJornadaRemota(
+                            existente, remoto.id, remoto.uuidPublico, rutaIdLocal, remoto.fechaOperativa, remoto.turno, remoto.estado,
+                            totalEntregas = remoto.productoresAtendidos.toLong(),
+                            totalLitros = remoto.litros.toDoubleOrNull() ?: 0.0,
+                        )
                     }
                 }
             }
@@ -266,7 +339,13 @@ class JornadaRepositoryImpl(
             val remota = api.abrirJornada(AbrirJornadaRequest(rutaId = idRemotoRuta.toString(), fechaOperativa = fechaOperativa, turno = TURNO_UNICO))
             val existente = q.jornadaPorIdRemoto(remota.id).executeAsOneOrNull()
             estadoApp.sincronizacionTerminada(reloj.ahoraMillis())
-            Result.Success(guardarJornadaRemota(existente, remota.id, remota.uuidPublico, rutaId, remota.fechaOperativa, remota.turno, remota.estado))
+            Result.Success(
+                guardarJornadaRemota(
+                    existente, remota.id, remota.uuidPublico, rutaId, remota.fechaOperativa, remota.turno, remota.estado,
+                    totalEntregas = remota.productoresAtendidos.toLong(),
+                    totalLitros = remota.litros.toDoubleOrNull() ?: 0.0,
+                ),
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: ErrorRemotoException) {
@@ -287,10 +366,22 @@ class JornadaRepositoryImpl(
             ?: return Result.Success(crearJornadaLocalPendiente(rutaId, idRemotoRuta, fechaOperativa))
         val existente = q.jornadaPorIdRemoto(remota.id).executeAsOneOrNull()
         estadoApp.sincronizacionTerminada(reloj.ahoraMillis())
-        return Result.Success(guardarJornadaRemota(existente, remota.id, remota.uuidPublico, rutaId, remota.fechaOperativa, remota.turno, remota.estado))
+        return Result.Success(
+            guardarJornadaRemota(
+                existente, remota.id, remota.uuidPublico, rutaId, remota.fechaOperativa, remota.turno, remota.estado,
+                totalEntregas = remota.productoresAtendidos.toLong(),
+                totalLitros = remota.litros.toDoubleOrNull() ?: 0.0,
+            ),
+        )
     }
 
-    /** Upsert por `id_remoto`: crea si no existía localmente, conserva lo local si ya existía. */
+    /**
+     * Upsert por `id_remoto`: crea si no existía localmente, conserva lo local si ya existía.
+     * `totalEntregas`/`totalLitros` vienen siempre del backend (`productores_atendidos`/`litros`
+     * en la respuesta) — antes se heredaban de `existente` (o `0` si no había fila previa), así
+     * que una jornada recién descargada (o tras borrar los datos locales) siempre mostraba "0
+     * entregas · 0,0 L" sin importar lo que el backend realmente tuviera registrado.
+     */
     private fun guardarJornadaRemota(
         existente: DbJornada?,
         idRemoto: Long,
@@ -299,6 +390,8 @@ class JornadaRepositoryImpl(
         fechaOperativa: String,
         turno: String,
         estado: String,
+        totalEntregas: Long,
+        totalLitros: Double,
     ): Jornada {
         val idLocal = existente?.id_local ?: randomUuid()
         val ahora = reloj.ahoraMillis()
@@ -312,8 +405,8 @@ class JornadaRepositoryImpl(
             fecha_operativa = fechaOperativa,
             estado = estado,
             observaciones = existente?.observaciones,
-            total_litros = existente?.total_litros ?: 0.0,
-            total_entregas = existente?.total_entregas ?: 0L,
+            total_litros = totalLitros,
+            total_entregas = totalEntregas,
             abierta_en = existente?.abierta_en ?: ahora,
             cerrada_en = existente?.cerrada_en,
             estado_sync = "CREADO",
@@ -363,6 +456,8 @@ class EntregaRepositoryImpl(
     private val dispatchers: DispatcherProvider,
     private val reloj: Reloj,
     private val cola: ColaSyncWriter,
+    private val sync: SyncRepository,
+    private val appScope: CoroutineScope,
 ) : EntregaRepository {
 
     private val q get() = db.acopioQueries
@@ -413,6 +508,10 @@ class EntregaRepositoryImpl(
             "observacion" to (observacion ?: ""),
         )
         cola.encolar(TipoEntidadSync.ENTREGA, id, id, payload)
+        // Sube de inmediato en segundo plano (spec: "el recolector no pulsa nada"). No se espera
+        // aquí — appScope, no dispatchers.io de este withContext — para no retrasar el retorno;
+        // si falla o no hay red, el registro ya quedó en cola_sync y se reintentará como siempre.
+        appScope.launch { sync.sincronizarTodo() }
         Result.Success(q.entregaPorId(id).executeAsOne().toDomain())
     }
 

@@ -127,6 +127,15 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 cerrarJornada:
 UPDATE jornada SET estado = 'cerrada', cerrada_en = :en, estado_sync = 'PENDIENTE' WHERE id_local = :id;
 
+-- Aplica el resultado real de POST .../jornadas/{uuid}/cerrar: totales autoritativos del
+-- backend (litros/entregas ya incluyen "no entregó" en el servidor) y confirma id_remoto/uuid
+-- por si esta jornada nunca se había refrescado localmente después de abrirse.
+aplicarCierreJornada:
+UPDATE jornada
+SET estado = 'cerrada', cerrada_en = :cerradaEn, total_litros = :totalLitros, total_entregas = :totalEntregas,
+    estado_sync = 'CREADO', id_remoto = :idRemoto, uuid_publico = :uuid
+WHERE id_local = :id;
+
 actualizarTotalesJornada:
 UPDATE jornada
 SET total_litros = (SELECT COALESCE(SUM(litros), 0.0) FROM entrega WHERE jornada_id = :id AND no_entrego = 0),

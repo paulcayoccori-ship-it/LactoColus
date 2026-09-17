@@ -27,8 +27,12 @@ sealed class Destino(val ruta: String) {
 
     // Calidad
     data object CalidadInicio : Destino("c_home")
-    data object CalidadBuscar : Destino("c_buscar")
-    data class CalidadAnalisis(val productorId: String, val nombre: String = "") : Destino("c_analisis/$productorId")
+    /** Nivel 1 de "Nuevo análisis": recolectores/jornadas del día. */
+    data object CalidadJornadas : Destino("c_jornadas")
+    /** Nivel 2: entregas de la jornada elegida. */
+    data class CalidadJornada(val jornadaIdRemoto: String) : Destino("c_jornada/$jornadaIdRemoto")
+    /** Nivel 3: formulario, ya ligado a una entrega concreta (`productorIdRemoto` viene de ahí). */
+    data class CalidadAnalisis(val productorIdRemoto: String, val nombre: String, val entregaId: String) : Destino("c_analisis/$productorIdRemoto/$entregaId")
     data class CalidadResultado(val analisisId: String) : Destino("c_resultado/$analisisId")
     data object CalidadHistorial : Destino("c_hist")
     data object CalidadSync : Destino("c_sync")
@@ -82,11 +86,13 @@ fun barraDeRol(rol: Rol): List<ItemBarra> = when (rol) {
         ItemBarra(Destino.RecolectorHistorial, "Historial", "history"),
         ItemBarra(Destino.Perfil, "Perfil", "person"),
     )
+    // Sin pestaña de Sincronización: calidad tampoco administra la cola (mismo criterio que el
+    // recolector, ver arriba). La pantalla sigue existiendo — se llega desde Perfil o la tira de
+    // conexión.
     Rol.CALIDAD -> listOf(
         ItemBarra(Destino.CalidadInicio, "Inicio", "home"),
-        ItemBarra(Destino.CalidadBuscar, "Nuevo análisis", "add"),
+        ItemBarra(Destino.CalidadJornadas, "Nuevo análisis", "add"),
         ItemBarra(Destino.CalidadHistorial, "Historial", "history"),
-        ItemBarra(Destino.CalidadSync, "Sincronización", "sync"),
         ItemBarra(Destino.Perfil, "Perfil", "person"),
     )
     Rol.PRODUCTOR -> listOf(

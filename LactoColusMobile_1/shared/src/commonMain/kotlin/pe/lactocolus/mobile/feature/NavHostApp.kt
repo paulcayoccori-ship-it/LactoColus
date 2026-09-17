@@ -21,10 +21,11 @@ import pe.lactocolus.mobile.core.navigation.Navegador
 import pe.lactocolus.mobile.core.navigation.sincronizacionDeRol
 import pe.lactocolus.mobile.core.ui.Formato
 import pe.lactocolus.mobile.domain.model.Rol
-import pe.lactocolus.mobile.feature.calidad.BuscarProductorScreen
 import pe.lactocolus.mobile.feature.calidad.CalidadInicioScreen
 import pe.lactocolus.mobile.feature.calidad.CalidadViewModel
+import pe.lactocolus.mobile.feature.calidad.EntregasDeJornadaCalidadScreen
 import pe.lactocolus.mobile.feature.calidad.HistorialCalidadScreen
+import pe.lactocolus.mobile.feature.calidad.JornadasCalidadScreen
 import pe.lactocolus.mobile.feature.calidad.NuevoAnalisisScreen
 import pe.lactocolus.mobile.feature.calidad.ResultadoAnalisisScreen
 import pe.lactocolus.mobile.feature.perfil.PerfilScreen
@@ -112,9 +113,14 @@ private fun RecolectorGrafo(vm: RecolectorViewModel, destino: Destino, nav: Nave
 @Composable
 private fun CalidadGrafo(vm: CalidadViewModel, destino: Destino, nav: Navegador) {
     when (destino) {
-        Destino.CalidadInicio -> CalidadInicioScreen(vm, { nav.navegar(Destino.CalidadBuscar) }, { nav.navegar(Destino.CalidadResultado(it)) })
-        Destino.CalidadBuscar -> BuscarProductorScreen(vm) { id, nombre -> nav.navegar(Destino.CalidadAnalisis(id, nombre)) }
-        is Destino.CalidadAnalisis -> NuevoAnalisisScreen(vm, destino.productorId, destino.nombre) { nav.navegar(Destino.CalidadResultado(it)) }
+        Destino.CalidadInicio -> CalidadInicioScreen(vm, { nav.navegar(Destino.CalidadJornadas) }, { nav.navegar(Destino.CalidadResultado(it)) })
+        Destino.CalidadJornadas -> JornadasCalidadScreen(vm) { idRemoto -> nav.navegar(Destino.CalidadJornada(idRemoto.toString())) }
+        is Destino.CalidadJornada -> EntregasDeJornadaCalidadScreen(vm, destino.jornadaIdRemoto.toLongOrNull() ?: 0L) { productorIdRemoto, nombre, entregaId ->
+            nav.navegar(Destino.CalidadAnalisis(productorIdRemoto.toString(), nombre, entregaId.toString()))
+        }
+        is Destino.CalidadAnalisis -> NuevoAnalisisScreen(vm, destino.productorIdRemoto.toLongOrNull() ?: 0L, destino.nombre, destino.entregaId.toLongOrNull() ?: 0L) {
+            nav.navegar(Destino.CalidadResultado(it))
+        }
         is Destino.CalidadResultado -> ResultadoAnalisisScreen(vm, destino.analisisId) { nav.seleccionarPestana(Destino.CalidadInicio) }
         Destino.CalidadHistorial -> HistorialCalidadScreen(vm) { nav.navegar(Destino.CalidadResultado(it)) }
         Destino.CalidadSync -> {

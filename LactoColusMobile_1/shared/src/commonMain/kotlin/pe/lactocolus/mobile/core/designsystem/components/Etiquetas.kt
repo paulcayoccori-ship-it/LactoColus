@@ -76,6 +76,14 @@ fun EtiquetaJornada(estado: EstadoJornada) = when (estado) {
     EstadoJornada.ANULADA -> EtiquetaEstado("Anulada", TonoEtiqueta.ERROR, Icons.Filled.ErrorOutline)
 }
 
+/** Marca si una entrega ya tiene análisis — color + icono + texto, nunca solo color. */
+@Composable
+fun EtiquetaAnalisis(tieneAnalisis: Boolean) = if (tieneAnalisis) {
+    EtiquetaEstado("Analizada", TonoEtiqueta.EXITO, Icons.Filled.CheckCircle)
+} else {
+    EtiquetaEstado("Pendiente", TonoEtiqueta.ADVERTENCIA, Icons.Filled.HourglassEmpty)
+}
+
 @Composable
 fun EtiquetaResultadoAnalisis(r: ResultadoAnalisis) = when (r) {
     ResultadoAnalisis.CONFORME -> EtiquetaEstado("Conforme", TonoEtiqueta.EXITO, Icons.Filled.CheckCircle)

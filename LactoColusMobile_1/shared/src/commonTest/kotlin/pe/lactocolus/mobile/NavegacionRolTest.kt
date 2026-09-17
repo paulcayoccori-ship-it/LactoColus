@@ -37,6 +37,13 @@ class NavegacionRolTest {
     }
 
     @Test
+    fun barra_de_calidad_no_incluye_sincronizacion() {
+        // Mismo criterio que el recolector: calidad tampoco administra la cola desde la barra.
+        val etiquetas = barraDeRol(Rol.CALIDAD).map { it.etiqueta }
+        assertEquals(listOf("Inicio", "Nuevo análisis", "Historial", "Perfil"), etiquetas)
+    }
+
+    @Test
     fun barra_del_productor_tiene_cuatro_pestanas() {
         val etiquetas = barraDeRol(Rol.PRODUCTOR).map { it.etiqueta }
         assertEquals(listOf("Inicio", "Entregas", "Calidad", "Más"), etiquetas)
